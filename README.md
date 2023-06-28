@@ -1,8 +1,10 @@
 # XenServer
 SYNOPSIS
+
     Creates an inventory of a XenServer 8.2 Host or Pool.
     
 SYNTAX
+
     C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] 
     [-Folder <String>] [-Section <String[]>] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] 
     [-ReportFooter] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From <String>] [-To 
@@ -17,6 +19,7 @@ SYNTAX
 
 
 DESCRIPTION
+
     Creates a complete inventory of a XenServer 8.2 Host or Pool using Microsoft
     Word, PDF, formatted text, HTML, and PowerShell.
 
@@ -43,6 +46,7 @@ DESCRIPTION
 
 
 PARAMETERS
+
     -ServerName <String>
         Specifies which XenServer Host or Pool to use to run the script against.
 
@@ -439,16 +443,17 @@ PARAMETERS
         about_CommonParameters (https:/go.microsoft.com/fwlink/?LinkID=113216).
 
 INPUTS
+
     None. You cannot pipe objects to this script.
 
 
 OUTPUTS
+
     No objects are output from this script. This script creates a Word, PDF, HTML, or plain
     text document.
 
 
 NOTES
-
 
         NAME: XS_Inventory.ps1
         VERSION: 0.001
