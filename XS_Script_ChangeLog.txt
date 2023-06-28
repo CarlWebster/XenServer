@@ -1,0 +1,7 @@
+#webster@carlwebster.com
+#@carlwebster on Twitter
+#http://www.CarlWebster.com
+
+#First attempt started on January 8, 2025 with XenServer 6.2
+#Gave up on May 8, 2015
+#Started the XenServer 8.2 attempt on June 27, 2023
