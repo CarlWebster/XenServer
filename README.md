@@ -1,6 +1,7 @@
 # XenServer
 SYNOPSIS
     Creates an inventory of a XenServer 8.2 Host or Pool.
+    
 SYNTAX
     C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] 
     [-Folder <String>] [-Section <String[]>] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] 
