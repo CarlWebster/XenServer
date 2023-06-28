@@ -1,4 +1,17 @@
 # XenServer
+
+What? Another XenServer Documentation script attempt? I thought you were retiring on July 1st?
+
+In a "vigorous" discussion with the keeper of the Citrix SDK docs on GitHub, I ended the conversation with, "Don't even get me started on the horrible, terrible, not-good XenServer PowerShell implementation!!!!!!".
+
+That led to a long conversation involving the XenServer engineering and dev teams. They told me they had improved XS PoSH, and it was no longer "a pathetic piece of crap". So I spent a couple of hours yesterday bringing the old 2015 XS6.2 doc script attempt up to the current doc script standards and making it work with the XS 8.2.3 SDK. I told them that even though I am retiring from EUC community service work on July 1st, I have waited and wanted a XenServer doc script for years that I would work on it when I could.
+
+I created this GitHub repo for this script attempt.
+
+If you still use or want to test this script, have at it. I am busy with work and Lions Clubs stuff, but I will do what I can when I can.
+
+If you want to test it, you must do whatever you do on GitHub to receive notifications when I do updates. I started the initial version at .001, as I think it will take a few updates with my schedule to make significant progress.
+
 SYNOPSIS
 
     Creates an inventory of a XenServer 8.2 Host or Pool.
