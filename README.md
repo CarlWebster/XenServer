@@ -460,6 +460,8 @@ NOTES
         AUTHOR: Carl Webster
         LASTEDIT: June 27, 2023
 
+EXAMPLES
+
     -------------------------- EXAMPLE 1 --------------------------
 
     PS C:\PSScript >.\XS_Inventory.ps1
