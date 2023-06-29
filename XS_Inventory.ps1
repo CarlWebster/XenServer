@@ -427,9 +427,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.001
+	VERSION: 0.002
 	AUTHOR: Carl Webster
-	LASTEDIT: June 27, 2023
+	LASTEDIT: June 29, 2023
 #>
 
 #endregion
@@ -540,7 +540,12 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
-
+#
+#.001 - initial version create from the May 2015 attempt
+#.002
+#	Pool section, 
+#		Added "(version x)" to the update name. Example CH82ECU1 (version 1.0)
+#		Fixed handling Tags where the default is "<None>"
 #endregion
 
 Function AbortScript
@@ -604,9 +609,9 @@ $ErrorActionPreference    = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials  = $Null
-$script:MyVersion         = '0.001'
+$script:MyVersion         = '0.002'
 $Script:ScriptName        = "XS_Inventory.ps1"
-$tmpdate                  = [datetime] "06/27/2023"
+$tmpdate                  = [datetime] "06/29/2023"
 $Script:ReleaseDate       = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4063,6 +4068,11 @@ Function OutputPool
 	{
 		[array]$xtags = $xtags | Sort-Object
 	}
+	Else
+	{
+		[array]$xtags = @("<None>")
+	}
+	
 	
 	$NumSockets = (($xshosts).cpu_info.socket_count | Measure-Object -sum).sum
 	
@@ -4170,13 +4180,15 @@ Function OutputPool
 		$rowdata += @(,('Description',($htmlsilver -bor $htmlbold),$Pool.name_description,$htmlwhite))
 		If($xtags.Count -gt 0)
 		{
-			$rowdata += @(,('Tags',($htmlsilver -bor $htmlbold),$xtags[0],$htmlwhite))
+			$tmp = $xtags[0].Trim("<",">")
+			$rowdata += @(,('Tags',($htmlsilver -bor $htmlbold),$tmp,$htmlwhite))
 			$cnt = -1
 			ForEach($tmp in $xtags)
 			{
 				$cnt++
 				If($cnt -gt 0)
 				{
+					$tmp = $tmp.Trim("<",">")
 					$rowdata += @(,('',($htmlsilver -bor $htmlbold),$tmp,$htmlwhite))
 				}
 			}
@@ -4199,7 +4211,7 @@ Function OutputPool
 
 Function OutputPoolUpdates
 {
-	$Updates = Get-XenPoolPatch -EA 0 4>$Null| Select-Object name_label | Sort-Object name_label
+	$Updates = Get-XenPoolPatch -EA 0 4>$Null| Select-Object name_label,version | Sort-Object name_label
 	
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool updates"
 	If($MSWord -or $PDF)
@@ -4212,7 +4224,7 @@ Function OutputPoolUpdates
 		ForEach($tmp in $Updates)
 		{
 			$WordTableRowHash = @{ 
-			Update = $tmp.name_label;
+			Update = "$($tmp.name_label) (version $($tmp.version))";
 			}
 			$WordTable += $WordTableRowHash;
 			$CurrentServiceIndex++;
@@ -4236,14 +4248,14 @@ Function OutputPoolUpdates
 	If($Text)
 	{
 		Line 1 "Updates"
-		Line 2 "Fully applied`t: " $Updates[0].name_label
+		Line 2 "Fully applied`t: " "$($Updates[0].name_label) (version $($tmp.version))"
 		$cnt = -1
 		ForEach($tmp in $Updates)
 		{
 			$cnt++
 			If($cnt -gt 0)
 			{
-				Line 4 "  " $tmp.name_label
+				Line 4 "  " "$($tmp.name_label) (version $($tmp.version))"
 			}
 		}
 	}
@@ -4254,7 +4266,7 @@ Function OutputPoolUpdates
 		ForEach($tmp in $Updates)
 		{
 			$rowdata += @(,(
-			$tmp.name_label,$htmlwhite))
+			"$($tmp.name_label) (version $($tmp.version))",$htmlwhite))
 		}
 		
 		$columnHeaders = @(
