@@ -427,9 +427,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.002
+	VERSION: 0.003
 	AUTHOR: Carl Webster
-	LASTEDIT: June 29, 2023
+	LASTEDIT: July 02, 2023
 #>
 
 #endregion
@@ -541,11 +541,24 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
-#.001 - initial version create from the May 2015 attempt
+#.003
+#	For the Pool report section
+#		Renamed Fnction OutputPool to OutputPoolGeneral
+#		Added Function OutputPoolCustomFields
+#		Added Function OutputPoolEmailOptions
+#		Added Function OutputPoolManagementInterfaces
+#			Includes sample code from the XenServer team
+#		Added Function OutputHostCustomFields
+#		Added Function OutputVMCustomFields
+#	In Function ProcessScriptSetup
+#		Sort Hosts and VMs by Name_Label so output is in sorted order
+#	Some general console and report output cleanup
+#
 #.002
 #	Pool section, 
 #		Added "(version x)" to the update name. Example CH82ECU1 (version 1.0)
 #		Fixed handling Tags where the default is "<None>"
+#.001 - initial version create from the May 2015 attempt
 #endregion
 
 Function AbortScript
@@ -609,9 +622,9 @@ $ErrorActionPreference    = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials  = $Null
-$script:MyVersion         = '0.002'
+$script:MyVersion         = '0.003'
 $Script:ScriptName        = "XS_Inventory.ps1"
-$tmpdate                  = [datetime] "06/29/2023"
+$tmpdate                  = [datetime] "07/02/2023"
 $Script:ReleaseDate       = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -3763,10 +3776,11 @@ Function ProcessScriptSetup
 
 	Write-Verbose "$(Get-Date -Format G): Retrieve XenServer hosts"
 	$tmptext = "XenServer Hosts"
-	$Script:XSHosts = Get-XenHost
+	$Script:XSHosts = Get-XenHost -EA 0
 	If($? -and $Null -ne $Script:XSHosts)
 	{
 		#success
+		$Script:XSHosts = $Script:XSHosts | Sort-Object Name_Label
 	}
 	ElseIf($? -and $Null -eq $Script:XSHosts)
 	{
@@ -3788,6 +3802,7 @@ Function ProcessScriptSetup
 	{
 		#success
 		$Script:PoolMasterInfo = ($Script:XSPool | Get-XenPoolProperty -XenProperty master -EA 0)
+		$Script:OtherConfig = ($XSPool | Get-XenPoolProperty -XenProperty OtherConfig -EA 0)
 	}
 	ElseIf($? -and $Null -eq $Script:XSPool)
 	{
@@ -3857,6 +3872,7 @@ Function ProcessScriptSetup
 	If($? -and $Null -ne $Script:VMNames)
 	{
 		#success
+		$Script:VMNames = $Script:VMNames | Sort-Object Name_Label
 	}
 	ElseIf($? -and $Null -eq $Script:VMNames)
 	{
@@ -4027,7 +4043,7 @@ Function ProcessScriptEnd
 #region pool
 Function ProcessPool
 {
-	Write-Verbose "$(Get-Date -Format G): Processing XenServer Pool"
+	Write-Verbose "$(Get-Date -Format G): Processing the $($Script:XSPool.name_label) Pool"
 	If($Null -eq $Script:XSPool.name_label)
 	{
 		Return
@@ -4037,30 +4053,31 @@ Function ProcessPool
 		If($MSWord -or $PDF)
 		{
 			$Selection.InsertNewPage()
-			WriteWordLine 1 0 "XenDesktop Pool"
+			WriteWordLine 1 0 "$($Script:XSPool.name_label) Pool"
 		}
 		If($Text)
 		{
-			Line 0 ""
-			Line 0 "XenDesktop Pool"
+			Line 0 "$($Script:XSPool.name_label) Pool"
 			Line 0 ""
 		}
 		If($HTML)
 		{
-			WriteHTMLLine 1 0 "XenDesktop Pool"
+			WriteHTMLLine 1 0 "$($Script:XSPool.name_label) Pool"
 		}
 		
-		OutputPool $Script:XSPool $Script:PoolMasterInfo
+		OutputPoolGeneral
+		OutputPoolCustomFields
+		OutputPoolEmailOptions
 		OutputPoolUpdates
+		OutputPoolManagementInterfaces
 	}
 }
 
-Function OutputPool
+Function OutputPoolGeneral
 {
-	Param([object]$Pool, [object] $PoolMasterInfo)
-	
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool General"
 	[array]$xtags = @()
-	ForEach($tag in $Pool.tags)
+	ForEach($tag in $Script:XSPool.tags)
 	{
 		$xtags += $tag
 	}
@@ -4087,7 +4104,7 @@ Function OutputPool
 		desktop-plus
 		desktop-cloud
 	#>
-	Switch($PoolMasterInfo.edition)
+	Switch($Script:PoolMasterInfo.edition)
 	{
 		"express"				{$PoolLicense = "Express"}
 		"premium-per-socket"	{$PoolLicense = "Citrix Hypervisor Premium Per-Socket"}
@@ -4096,16 +4113,16 @@ Function OutputPool
 		"desktop"				{$PoolLicense = "Citrix Virtual Apps and Desktops"}
 		"desktop-cloud"			{$PoolLicense = "Citrix Virtual Apps and Desktops Citrix Cloud"}
 		"desktop-plus"			{$PoolLicense = "XenApp/XenDesktop Platinum"}
-		Default					{$PoolLicense = "Unable to determine Pool License: $($PoolMasterInfo.edition)"}
+		Default					{$PoolLicense = "Unable to determine Pool License: $($Script:PoolMasterInfo.edition)"}
 	}
 	
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool data"
 	If($MSWord -or $PDF)
 	{
-		WriteWordLine 2 0 "General " $Pool.name_label
+		WriteWordLine 2 0 "General"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		$ScriptInformation += @{ Data = "Pool name"; Value = $Pool.name_label; }
-		$ScriptInformation += @{ Data = "Description"; Value = $Pool.name_description; }
+		$ScriptInformation += @{ Data = "Pool name"; Value = $Script:XSPool.name_label; }
+		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
 		If($xtags.Count -gt 0)
 		{
 			$ScriptInformation += @{ Data = "Tags"; Value = $xtags[0]; }
@@ -4119,14 +4136,14 @@ Function OutputPool
 				}
 			}
 		}
-		If( validObject $Pool.Other_Config folder )
+		If( validObject $Script:XSPool.Other_Config folder )
 		{
-			$ScriptInformation += @{ Data = "Folder"; Value = $Pool.Other_Config.folder; }
+			$ScriptInformation += @{ Data = "Folder"; Value = $Script:XSPool.Other_Config.folder; }
 		}
 		$ScriptInformation += @{ Data = "Pool License"; Value = $PoolLicense; }
 		$ScriptInformation += @{ Data = "Number of Sockets"; Value = $NumSockets; }
-		$ScriptInformation += @{ Data = "XenServer Version"; Value = $PoolMasterInfo.software_version.product_version_text_short; }
-		$ScriptInformation += @{ Data = "UUID"; Value = $Pool.uuid; }
+		$ScriptInformation += @{ Data = "XenServer Version"; Value = $Script:PoolMasterInfo.software_version.product_version_text_short; }
+		$ScriptInformation += @{ Data = "UUID"; Value = $Script:XSPool.uuid; }
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 		-Columns Data,Value `
 		-List `
@@ -4148,8 +4165,8 @@ Function OutputPool
 	If($Text)
 	{
 		Line 1 "General"
-		Line 2 "Pool name`t`t: " $Pool.name_label
-		Line 2 "Description`t`t: " $Pool.name_description
+		Line 2 "Pool name`t`t: " $Script:XSPool.name_label
+		Line 2 "Description`t`t: " $Script:XSPool.name_description
 		If($xtags.Count -gt 0)
 		{
 			Line 2 "Tags`t`t`t: " $xtags[0]
@@ -4163,21 +4180,22 @@ Function OutputPool
 				}
 			}
 		}
-		If( validObject $Pool.Other_Config folder )
+		If( validObject $Script:XSPool.Other_Config folder )
 		{
-			Line 2 "Folder`t`t`t: " $Pool.Other_Config.folder
+			Line 2 "Folder`t`t`t: " $Script:XSPool.Other_Config.folder
 		}
 		Line 2 "Pool License`t`t: " $PoolLicense
 		Line 2 "Number of Sockets`t: " $NumSockets
-		Line 2 "XenServer Version`t: " $PoolMasterInfo.software_version.product_version_text_short
-		Line 2 "UUID`t`t`t: " $Pool.uuid
+		Line 2 "XenServer Version`t: " $Script:PoolMasterInfo.software_version.product_version_text_short
+		Line 2 "UUID`t`t`t: " $Script:XSPool.uuid
 		Line 0 ""
 	}
 	If($HTML)
 	{
+		WriteHTMLLine 2 0 "General"
 		$rowdata = @()
-		$columnHeaders = @("Pool name",($htmlsilver -bor $htmlbold),$Pool.name_label,$htmlwhite)
-		$rowdata += @(,('Description',($htmlsilver -bor $htmlbold),$Pool.name_description,$htmlwhite))
+		$columnHeaders = @("Pool name",($htmlsilver -bor $htmlbold),$Script:XSPool.name_label,$htmlwhite)
+		$rowdata += @(,('Description',($htmlsilver -bor $htmlbold),$Script:XSPool.name_description,$htmlwhite))
 		If($xtags.Count -gt 0)
 		{
 			$tmp = $xtags[0].Trim("<",">")
@@ -4193,31 +4211,396 @@ Function OutputPool
 				}
 			}
 		}
-		If( validObject $Pool.Other_Config folder )
+		If( validObject $Script:XSPool.Other_Config folder )
 		{
-			$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),$Pool.Other_Config.folder,$htmlwhite))
+			$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),$Script:XSPool.Other_Config.folder,$htmlwhite))
 		}
 		$rowdata += @(,('Pool License',($htmlsilver -bor $htmlbold),$PoolLicense,$htmlwhite))
 		$rowdata += @(,('Number of Sockets',($htmlsilver -bor $htmlbold),$NumSockets,$htmlwhite))
-		$rowdata += @(,('XenServer Version',($htmlsilver -bor $htmlbold),$PoolMasterInfo.software_version.product_version_text_short,$htmlwhite))
-		$rowdata += @(,('UUID',($htmlsilver -bor $htmlbold),$Pool.uuid,$htmlwhite))
+		$rowdata += @(,('XenServer Version',($htmlsilver -bor $htmlbold),$Script:PoolMasterInfo.software_version.product_version_text_short,$htmlwhite))
+		$rowdata += @(,('UUID',($htmlsilver -bor $htmlbold),$Script:XSPool.uuid,$htmlwhite))
 
-		$msg = "General"
+		$msg = ""
 		$columnWidths = @("150","250")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
 }
 
+Function OutputPoolCustomFields
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Custom Fields"
+
+	$CustomFields = New-Object System.Collections.ArrayList
+	$OtherConfig = ($Script:XSPool | Get-XenPoolProperty -XenProperty OtherConfig -EA 0)
+	
+	ForEach($Item in $OtherConfig.Keys)
+	{
+		If($Item -like "*customfields*")
+		{
+			$obj1 = [PSCustomObject] @{
+				Name  = $Item
+				Value = $($OtherConfig.$item)
+			}
+			$Null = $CustomFields.Add($obj1)
+		}
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "Custom Fields"
+	}
+	If($Text)
+	{
+		Line 1 "Custom Fields"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 2 0 "Custom Fields"
+	}
+	
+	If($CustomFields.Count -eq 0)
+	{
+		$PoolName = $Script:XSPool.Name_Label
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no Custom Fields for Pool $PoolName"
+		}
+		If($Text)
+		{
+			Line 3 "There are no Custom Fields for Pool $PoolName"
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no Custom Fields for Pool $PoolName"
+		}
+	}
+	Else
+	{
+		If($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If($Text)
+		{
+			#nothing
+		}
+		If($HTML)
+		{
+			$rowdata = @()
+		}
+
+		[int]$cnt = -1
+		ForEach($Item in $CustomFields)
+		{
+			#you can create a DateTime custom field, but it is stored as a string
+			#that string doesn't accept any of the standard PowerShell date formatting options
+			#You can't tell the difference between a datetime or text custom field
+			#The only thing I have found to do is assign a temp variable to the value property
+			#and attempt a [datetime]conversion. If it works, you have a datetime, if not, you don't
+			
+			$cnt++
+			try
+			{
+				[datetime]$DateTimeValue = $Item.Value
+
+				$ValidDateTime = $True
+				#Thanks to Michael B. SMith for the next two lines
+				$DateTimeValue = $Item.Value -as [DateTime]
+				$DateTimeValueString = $DateTimeValue.ToLongDateString()+' '+$DateTimeValue.ToLongTimeString()
+			}
+
+			catch
+			{
+				#failed to convert to datetime
+				$ValidDateTime = $False
+			}
+			
+			If($MSWord -or $PDF)
+			{
+				If($ValidDateTime -eq $False)
+				{
+					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $Item.Value; }
+				}
+				Else
+				{
+					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $DateTimeValueString ; }
+				}
+			}
+			If($Text)
+			{
+				If($ValidDateTime -eq $False)
+				{
+					Line 2 "$($Item.Name.Substring(23)): " $Item.Value
+				}
+				Else
+				{
+					Line 2 "$($Item.Name.Substring(23)): " $DateTimeValueString
+				}
+			}
+			If($HTML)
+			{
+				If($cnt -eq 0)
+				{
+					If($ValidDateTime -eq $False)
+					{
+						$columnHeaders = @($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite)
+					}
+					Else
+					{
+						$columnHeaders = @($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$DateTimeValueString,$htmlwhite)
+					}
+				}
+				Else
+				{
+					If($ValidDateTime -eq $False)
+					{
+						$rowdata += @(,($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite))
+					}
+					Else
+					{
+						$rowdata += @(,($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$DateTimeValueString,$htmlwhite))
+					}
+				}
+			}
+		}
+		
+		If($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data,Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 250;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If($Text)
+		{
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("250","250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+}
+
+Function OutputPoolEmailOptions
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Email Options"
+
+	$EmailOptions = New-Object System.Collections.ArrayList
+	
+	ForEach($Item in $Script:OtherConfig.Keys)
+	{
+		If($Item -like "*mail*")
+		{
+			$obj1 = [PSCustomObject] @{
+				Name  = $Item
+				Value = $($OtherConfig.$item)
+			}
+			$Null = $EmailOptions.Add($obj1)
+		}
+	}
+	
+	If($EmailOptions.Count -gt 0)
+	{
+		$MailEnabled = $True
+	}
+	Else
+	{
+		$MailEnabled = $False
+	}
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "Email Options"
+	}
+	If($Text)
+	{
+		Line 1 "Email Options"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 2 0 "Email Options"
+	}
+	
+	If($MailEnabled)
+	{
+		#Name                           Value
+		#----                           -----
+		#ssmtp-mailhub                  smtp.office365.com:587
+		#mail-destination               webster@carlwebster.com
+		#mail-language                  en-US
+		
+		#en-US = English (United States)
+		#zh-CN = Chinese (Simplified)
+		#ja-JP = Japanese (Japan)
+
+		If($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Delivery address"; Value = ""; }
+		}
+		If($Text)
+		{
+			#nothing
+			Line 2 "Delivery address"
+		}
+		If($HTML)
+		{
+			$rowdata = @()
+			$columnHeaders = @("Delivery address",($htmlsilver -bor $htmlbold),"",$htmlwhite)
+		}
+		
+		ForEach($Item in $EmailOptions)
+		{
+			If($Item.Name -eq "ssmtp-mailhub")
+			{
+				[array]$TmpArray = $Item.Value.Split(":")
+				$DAText = "$($TmpArray[0])"
+				$DAData = "Port: $($TmpArray[1])"
+				If($MSWord -or $PDF)
+				{
+					$ScriptInformation += @{ Data = "     SMTP server"; Value = "$($DAText)     $($DAData)"; }
+				}
+				If($Text)
+				{
+					Line 3 "SMTP server`t: $($DAText)`t" $DAData
+				}
+				If($HTML)
+				{
+					$rowdata += @(,("     SMTP server",($htmlsilver -bor $htmlbold),"$($DAText)     $($DAData)",$htmlwhite))
+				}
+			}
+			ElseIf($Item.Name -eq "mail-destination")
+			{
+				If($MSWord -or $PDF)
+				{
+					$ScriptInformation += @{ Data = "     Email address"; Value = $Item.Value; }
+				}
+				If($Text)
+				{
+					Line 3 "Email address`t: " $Item.Value
+				}
+				If($HTML)
+				{
+					$rowdata += @(,("     Email address",($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite))
+				}
+			}
+			ElseIf($Item.Name -eq "mail-language")
+			{
+				Switch($Item.Value)
+				{
+					"en-US" {$DAData = "English (United States)"; Break}
+					"ja-JP" {$DAData = "Japanese (Japan)"; Break}
+					"zh-CN" {$DAData = "Chinese (Simplified)"; Break}
+					Default {$DAData = "Unable to determine the email language: $($Item.Value)"; Break}
+				}
+
+				If($MSWord -or $PDF)
+				{
+					$ScriptInformation += @{ Data = "     Mail language"; Value = $DAData; }
+				}
+				If($Text)
+				{
+					Line 3 "Mail language`t: " $DAData
+				}
+				If($HTML)
+				{
+					$rowdata += @(,("     Mail language",($htmlsilver -bor $htmlbold),$DAData,$htmlwhite))
+				}
+			}
+			Else
+			{
+				#oops we shouldn't be here
+				If($MSWord -or $PDF)
+				{
+					$ScriptInformation += @{ Data = "     $($Item.Name)"; Value = $Item.Value; }
+				}
+				If($Text)
+				{
+					Line 3 "$($Item.Name)`t: " $Item.Value
+				}
+				If($HTML)
+				{
+					$rowdata += @(,("     $($Item.Name)",($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite))
+				}
+			}
+		}
+
+		If($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data,Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 100;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If($Text)
+		{
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("100","250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+	Else
+	{
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 0 "Send email alert notifications is disabled"
+		}
+		If($Text)
+		{
+			Line 2 "Send email alert notifications is disabled"
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 0 "Send email alert notifications is disabled"
+		}
+	}
+}
+
 Function OutputPoolUpdates
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Updates"
 	$Updates = Get-XenPoolPatch -EA 0 4>$Null| Select-Object name_label,version | Sort-Object name_label
 	
-	Write-Verbose "$(Get-Date -Format G): `tOutput Pool updates"
 	If($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $WordTable = @();
-		[int] $CurrentServiceIndex = 2;
 		
 		WriteWordLine 2 0 "Updates" 
 		
@@ -4227,7 +4610,6 @@ Function OutputPoolUpdates
 			Update = "$($tmp.name_label) (version $($tmp.version))";
 			}
 			$WordTable += $WordTableRowHash;
-			$CurrentServiceIndex++;
 		}
 		## Add the table to the document, using the hashtable (-Alt is short for -AlternateBackgroundColor!)
 		$Table = AddWordTable -Hashtable $WordTable `
@@ -4258,6 +4640,7 @@ Function OutputPoolUpdates
 				Line 4 "  " "$($tmp.name_label) (version $($tmp.version))"
 			}
 		}
+		Line 0 ""
 	}
 	If($HTML)
 	{
@@ -4278,31 +4661,270 @@ Function OutputPoolUpdates
 	
 }
 
+Function OutputPoolManagementInterfaces
+{
+	
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Management Interfaces"
+	#Sample code from the XenServer team
+	<#
+		this is what XenCenter does:
+		$servers = get-xenhost
+		
+		foreach ($server in $servers) {
+			Write-host "DNS hostname:" $server.hostname
+			
+			$mPifs = $server.PIFs | get-xenPIF | where {$_.management}
+
+			foreach ($pif in $mPifs) {
+				if ($pif.IP) {
+					Write-Host "Management interface on" $server.name_label ":" $pif.IP
+				}
+				elseif ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) {
+					Write-Host "Management interface on" $server.name_label ":" "DHCP"
+				}
+				else {
+					Write-Host "Management interface on" $server.name_label ":" "Unknown"
+				}
+			} 
+		}
+	#>
+
+	$Servers = Get-XenHost -EA 0
+	
+	If(!$?)
+	{
+		Write-Warning "
+		`n
+		Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label`
+		"
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 0 "Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label"
+		}
+		If($Text)
+		{
+			Line 0 "Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label"
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 0 "Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label"
+		}
+	}
+	ElseIf($? -and $Null -eq $Servers)
+	{
+		Write-Host "
+	No Servers found for Management Interfaces for Pool $Pool.name_label.
+		" -ForegroundColor White
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 0 "No Servers found for Management Interfaces for Pool $Pool.name_label"
+		}
+		If($Text)
+		{
+			Line 0 "No Servers found for Management Interfaces for Pool $Pool.name_label"
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 0 "No Servers found for Management Interfaces for Pool $Pool.name_label"
+		}
+	}
+	Else
+	{
+		$Servers = $Servers | Sort-Object hostname
+		
+		<#ForEach ($Server in $Servers) 
+		{
+			Write-host "DNS hostname:" $Server.hostname
+			
+			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+
+			ForEach ($pif in $mPifs) 
+			{
+				If ($pif.IP) 
+				{
+					Write-Host "Management interface on" $server.name_label ":" $pif.IP
+				}
+				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+				{
+					Write-Host "Management interface on" $server.name_label ":" "DHCP"
+				}
+				Else 
+				{
+					Write-Host "Management interface on" $server.name_label ":" "Unknown"
+				}
+			} 
+		}#>
+
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 2 0 "Management Interfaces"
+			$MITable = @()
+
+			ForEach ($Server in $Servers) 
+			{
+				$MITable += @{
+					Column1 = "DNS hostname on $($server.name_label):"
+					Column2 = $Server.hostname
+				}
+				
+				$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+
+				ForEach ($pif in $mPifs) 
+				{
+					If ($pif.IP) 
+					{
+						$MITable += @{
+							Column1 = "Management interface on $($server.name_label):"
+							Column2 = "$($pif.IP)"
+						}
+					}
+					ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+					{
+						$MITable += @{
+							Column1 = "Management interface on $($server.name_label):"
+							Column2 = "DHCP"
+						}
+					}
+					Else 
+					{
+						$MITable += @{
+							Column1 = "Management interface on $($server.name_label):"
+							Column2 = "Unknown"
+						}
+					}
+				} 
+			}
+
+			If($MITable.Count -gt 0)
+			{
+				$Table = AddWordTable -Hashtable $MITable `
+				-Columns Column1, Column2 `
+				-Headers "", "" `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+				SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+				$Table.Columns.Item(1).Width = 200;
+				$Table.Columns.Item(2).Width = 100;
+				
+				$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+				FindWordDocumentEnd
+				$Table = $Null
+				WriteWordLine 0 0 ""
+			}
+		}
+		If($Text)
+		{
+			Line 2 "Management Interfaces"
+			Line 2 "=============================================================="
+			#		1234567890123456789012345678901234567890SS12345678901234567890
+			#		Management interface on 'XenServer1       255.255.255.255
+			ForEach($Server in $Servers)
+			{
+				Line 2 ( "{0,-40}  {1,-20}" -f "DNS hostname on $($server.name_label):", $Server.hostname)
+				
+				$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+
+				ForEach ($pif in $mPifs) 
+				{
+					If ($pif.IP) 
+					{
+						Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "$($pif.IP)")
+					}
+					ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+					{
+						Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "DHCP")
+					}
+					Else 
+					{
+						Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "Unknown")
+					}
+				} 
+			}
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 2 0 "Management Interfaces"
+
+			$rowdata = @()
+
+			ForEach($Server in $Servers)
+			{
+				$rowdata += @(,(
+					"DNS hostname on $($server.name_label):",$htmlwhite,
+					$Server.hostname,$htmlwhite)
+				)
+				
+				$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+
+				ForEach ($pif in $mPifs) 
+				{
+					If ($pif.IP) 
+					{
+						$rowdata += @(,(
+							"Management interface on $($server.name_label):",$htmlwhite,
+							"$($pif.IP)",$htmlwhite)
+						)
+					}
+					ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+					{
+						$rowdata += @(,(
+							"Management interface on $($server.name_label):",$htmlwhite,
+							"DHCP",$htmlwhite)
+						)
+					}
+					Else 
+					{
+						$rowdata += @(,(
+							"Management interface on $($server.name_label):",$htmlwhite,
+							"Unknown",$htmlwhite)
+						)
+					}
+				} 
+			}
+
+			$columnHeaders = @(
+				"",($Script:htmlsb),
+				"",($Script:htmlsb)
+			)
+
+			$msg = ""
+			$columnWidths = @("250","100")
+			FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+}
+
 #endregion
 
 #region hosts
 Function ProcessHosts
 {
-	Write-Verbose "$(Get-Date -Format G): Process XenServer Hosts"
+	Write-Verbose "$(Get-Date -Format G): Process Hosts"
 	If($MSWord -or $PDF)
 	{
 		$Selection.InsertNewPage()
-		WriteWordLine 1 0 "XenServer Hosts"
+		WriteWordLine 1 0 "Hosts"
 	}
 	If($Text)
 	{
 		Line 0 ""
-		Line 0 "XenServer Hosts"
+		Line 0 "Hosts"
 		Line 0 ""
 	}
 	If($HTML)
 	{
-		WriteHTMLLine 1 0 "XenServer Hosts"
+		WriteHTMLLine 1 0 "Hosts"
 	}
 	
 	ForEach($XSHost in $Script:XSHosts)
 	{
 		OutputHost $XSHost
+		OutputHostCustomFields $XSHost
 	}
 }
 
@@ -4313,6 +4935,7 @@ Function OutputHost
 	Write-Verbose "$(Get-Date -Format G): `tProcessing Host $($XSHost.name_label)"
 	If($MSWord -or $PDF)
 	{
+		WriteWordLine 2 0 "Host: $XSHost.name_label"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Host name"; Value = $XSHost.name_label; }
 		$ScriptInformation += @{ Data = "CPU model name"; Value = $XSHost.cpu_info.modelname; }
@@ -4339,14 +4962,15 @@ Function OutputHost
 	}
 	If($Text)
 	{
-		Line 1 "Host name`t: " $XSHost.name_label
-		Line 1 "CPU model name`t: " $XSHost.cpu_info.modelname
-		Line 1 "Socket count`t: " $XSHost.cpu_info.socket_count
-		Line 1 "CPU count`t: " $XSHost.cpu_info.cpu_count
+		Line 1 "Host name: " $XSHost.name_label
+		Line 2 "CPU model name`t: " $XSHost.cpu_info.modelname
+		Line 2 "Socket count`t: " $XSHost.cpu_info.socket_count
+		Line 2 "CPU count`t: " $XSHost.cpu_info.cpu_count
 		Line 0 ""
 	}
 	If($HTML)
 	{
+		WriteHTMLLine 2 0 "Host: $XSHost.name_label"
 		$rowdata = @()
 		$columnHeaders = @("Host name",($htmlsilver -bor $htmlbold),$XSHost.name_label,$htmlwhite)
 		$rowdata += @(,('CPU model name',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.modelname,$htmlwhite))
@@ -4359,6 +4983,181 @@ Function OutputHost
 		WriteHTMLLIne 0 0 ""
 	}
 	
+}
+
+Function OutputHostCustomFields
+{
+	Param([object] $XSHost)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Custom Fields"
+
+	$CustomFields = New-Object System.Collections.ArrayList
+	$OtherConfig = ($XSHost | Get-XenHostProperty -XenProperty OtherConfig -EA 0)
+	
+	ForEach($Item in $OtherConfig.Keys)
+	{
+		If($Item -like "*customfields*")
+		{
+			$obj1 = [PSCustomObject] @{
+				Name  = $Item
+				Value = $($OtherConfig.$item)
+			}
+			$Null = $CustomFields.Add($obj1)
+		}
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Custom Fields"
+	}
+	If($Text)
+	{
+		Line 2 "Custom Fields"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "Custom Fields"
+	}
+	
+	If($CustomFields.Count -eq 0)
+	{
+		$HostName = $XSHost.Name_Label
+
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no Custom Fields for Host $HostName"
+		}
+		If($Text)
+		{
+			Line 3 "There are no Custom Fields for Host $HostName"
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no Custom Fields for Host $HostName"
+		}
+	}
+	Else
+	{
+		If($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If($Text)
+		{
+			#nothing
+		}
+		If($HTML)
+		{
+			$rowdata = @()
+		}
+
+		[int]$cnt = -1
+		ForEach($Item in $CustomFields)
+		{
+			#you can create a DateTime custom field, but it is stored as a string
+			#that string doesn't accept any of the standard PowerShell date formatting options
+			#You can't tell the difference between a datetime or text custom field
+			#The only thing I have found to do is assign a temp variable to the value property
+			#and attempt a [datetime]conversion. If it works, you have a datetime, if not, you don't
+			
+			$cnt++
+			try
+			{
+				[datetime]$DateTimeValue = $Item.Value
+
+				$ValidDateTime = $True
+				#Thanks to Michael B. SMith for the next two lines
+				$DateTimeValue = $Item.Value -as [DateTime]
+				$DateTimeValueString = $DateTimeValue.ToLongDateString()+' '+$DateTimeValue.ToLongTimeString()
+			}
+
+			catch
+			{
+				#failed to convert to datetime
+				$ValidDateTime = $False
+			}
+			
+			If($MSWord -or $PDF)
+			{
+				If($ValidDateTime -eq $False)
+				{
+					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $Item.Value; }
+				}
+				Else
+				{
+					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $DateTimeValueString ; }
+				}
+			}
+			If($Text)
+			{
+				If($ValidDateTime -eq $False)
+				{
+					Line 3 "$($Item.Name.Substring(23)): " $Item.Value
+				}
+				Else
+				{
+					Line 3 "$($Item.Name.Substring(23)): " $DateTimeValueString
+				}
+			}
+			If($HTML)
+			{
+				If($cnt -eq 0)
+				{
+					If($ValidDateTime -eq $False)
+					{
+						$columnHeaders = @($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite)
+					}
+					Else
+					{
+						$columnHeaders = @($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$DateTimeValueString,$htmlwhite)
+					}
+				}
+				Else
+				{
+					If($ValidDateTime -eq $False)
+					{
+						$rowdata += @(,($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite))
+					}
+					Else
+					{
+						$rowdata += @(,($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$DateTimeValueString,$htmlwhite))
+					}
+				}
+			}
+		}
+		
+		If($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data,Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 250;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If($Text)
+		{
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("250","250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
 }
 #endregion
 
@@ -4403,6 +5202,7 @@ Function ProcessVMs
 			}
 		}
 		OutputVM $VM $VMOSName $VMHost
+		OutputVMCustomFields $VM
 	}
 }
 
@@ -4424,6 +5224,7 @@ Function OutputVM
 	
 	If($MSWord -or $PDF)
 	{
+		WriteWordLine 2 0 "VM: $VM.name_label"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "VM name"; Value = $VM.name_label; }
 		$ScriptInformation += @{ Data = "Xen host name"; Value = $VMHost; }
@@ -4450,14 +5251,15 @@ Function OutputVM
 	}
 	If($Text)
 	{
-		Line 1 "VM name`t`t`t: " $VM.name_label
-		Line 1 "Xen host name`t`t: " $VMHost
-		Line 1 "VM Operating System`t: " $VMOSName
-		Line 1 "Number of vCPUs`t`t: " $VM.VCPUs_max
+		Line 1 "VM name: " $VM.name_label
+		Line 2 "Xen host name`t`t: " $VMHost
+		Line 2 "VM Operating System`t: " $VMOSName
+		Line 2 "Number of vCPUs`t`t: " $VM.VCPUs_max
 		Line 0 ""
 	}
 	If($HTML)
 	{
+		WriteHTMLLine 2 0 "VM: $VM.name_label"
 		$rowdata = @()
 		$columnHeaders = @("VM name",($htmlsilver -bor $htmlbold),$VM.name_label,$htmlwhite)
 		$rowdata += @(,('Xen host name',($htmlsilver -bor $htmlbold),$VMHost,$htmlwhite))
@@ -4470,6 +5272,181 @@ Function OutputVM
 		WriteHTMLLine 0 0 ""
 	}
 }
+
+Function OutputVMCustomFields
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Custom Fields"
+
+	$CustomFields = New-Object System.Collections.ArrayList
+	$OtherConfig = ($VM | Get-XenVMProperty -XenProperty OtherConfig -EA 0)
+	
+	ForEach($Item in $OtherConfig.Keys)
+	{
+		If($Item -like "*customfields*")
+		{
+			$obj1 = [PSCustomObject] @{
+				Name  = $Item
+				Value = $($OtherConfig.$item)
+			}
+			$Null = $CustomFields.Add($obj1)
+		}
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Custom Fields"
+	}
+	If($Text)
+	{
+		Line 2 "Custom Fields"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "Custom Fields"
+	}
+	
+	If($CustomFields.Count -eq 0)
+	{
+		$VMName = $VM.Name_Label
+
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no Custom Fields for VM $VMName"
+		}
+		If($Text)
+		{
+			Line 3 "There are no Custom Fields for VM $VMName"
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no Custom Fields for VM $VMName"
+		}
+	}
+	Else
+	{
+		If($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If($Text)
+		{
+			#nothing
+		}
+		If($HTML)
+		{
+			$rowdata = @()
+		}
+
+		[int]$cnt = -1
+		ForEach($Item in $CustomFields)
+		{
+			#you can create a DateTime custom field, but it is stored as a string
+			#that string doesn't accept any of the standard PowerShell date formatting options
+			#You can't tell the difference between a datetime or text custom field
+			#The only thing I have found to do is assign a temp variable to the value property
+			#and attempt a [datetime]conversion. If it works, you have a datetime, if not, you don't
+			
+			$cnt++
+			try
+			{
+				[datetime]$DateTimeValue = $Item.Value
+
+				$ValidDateTime = $True
+				#Thanks to Michael B. SMith for the next two lines
+				$DateTimeValue = $Item.Value -as [DateTime]
+				$DateTimeValueString = $DateTimeValue.ToLongDateString()+' '+$DateTimeValue.ToLongTimeString()
+			}
+
+			catch
+			{
+				#failed to convert to datetime
+				$ValidDateTime = $False
+			}
+			
+			If($MSWord -or $PDF)
+			{
+				If($ValidDateTime -eq $False)
+				{
+					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $Item.Value; }
+				}
+				Else
+				{
+					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $DateTimeValueString ; }
+				}
+			}
+			If($Text)
+			{
+				If($ValidDateTime -eq $False)
+				{
+					Line 3 "$($Item.Name.Substring(23)): " $Item.Value
+				}
+				Else
+				{
+					Line 3 "$($Item.Name.Substring(23)): " $DateTimeValueString
+				}
+			}
+			If($HTML)
+			{
+				If($cnt -eq 0)
+				{
+					If($ValidDateTime -eq $False)
+					{
+						$columnHeaders = @($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite)
+					}
+					Else
+					{
+						$columnHeaders = @($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$DateTimeValueString,$htmlwhite)
+					}
+				}
+				Else
+				{
+					If($ValidDateTime -eq $False)
+					{
+						$rowdata += @(,($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$Item.Value,$htmlwhite))
+					}
+					Else
+					{
+						$rowdata += @(,($($Item.Name.Substring(23)),($htmlsilver -bor $htmlbold),$DateTimeValueString,$htmlwhite))
+					}
+				}
+			}
+		}
+		
+		If($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data,Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 250;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If($Text)
+		{
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("250","250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+}
 #endregion
 
 #region script core
@@ -4480,7 +5457,7 @@ If(!$Results)
 {
 	Exit
 }
-###The function SetFileNames needs your script output filename###
+
 If($Null -eq $Script:XSPool.name_label)
 {
 	SetFileNames "$($Script:XSHosts[0].hostname)"
@@ -4490,17 +5467,14 @@ Else
 	SetFileNames "$($Script:XSPool.name_label)"
 }
 
-###change title for your report###
 If($Null -eq $Script:XSPool.name_label)
 {
-	[string]$Script:Title = "Inventory Report for the XenServer Host $($Script:XSHosts[0].hostname)"
+	[string]$Script:Title = "Inventory Report for the XenServer Host: $($Script:XSHosts[0].hostname)"
 }
 Else
 {
-	[string]$Script:Title = "Inventory Report for the XenServer Pool $($Script:XSPool.name_label)"
+	[string]$Script:Title = "Inventory Report for the XenServer Pool: $($Script:XSPool.name_label)"
 }
-
-###REPLACE AFTER THIS SECTION WITH YOUR SCRIPT###
 
 Write-Verbose "$(Get-Date -Format G): Start writing report data"
 
@@ -4511,7 +5485,6 @@ ProcessHosts
 ProcessVMs
 #endregion
 
-#region finish script
 #region finish script
 Write-Verbose "$(Get-Date -Format G): Finishing up document"
 #end of document processing
