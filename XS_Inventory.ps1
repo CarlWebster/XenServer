@@ -427,7 +427,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.004
+	VERSION: 0.005
 	AUTHOR: Carl Webster
 	LASTEDIT: July 04, 2023
 #>
@@ -541,6 +541,10 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
+#.005
+#	For the Host report section
+#		Renamed Function OutputHost to OutputHostGeneral
+#
 #.004
 #	For the Pool report section
 #		Added Function OutputPoolPowerOn
@@ -640,7 +644,7 @@ $ErrorActionPreference    = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials  = $Null
-$script:MyVersion         = '0.004'
+$script:MyVersion         = '0.005'
 $Script:ScriptName        = "XS_Inventory.ps1"
 $tmpdate                  = [datetime] "07/04/2023"
 $Script:ReleaseDate       = $tmpdate.ToUniversalTime().ToShortDateString()
@@ -4112,7 +4116,6 @@ Function OutputPoolGeneral
 		[array]$xtags = @("<None>")
 	}
 	
-	
 	$NumSockets = (($xshosts).cpu_info.socket_count | Measure-Object -sum).sum
 	
 	$PoolLicense = ""
@@ -4158,9 +4161,17 @@ Function OutputPoolGeneral
 				}
 			}
 		}
-		If( validObject $Script:XSPool.Other_Config folder )
+		
+		try
 		{
+			$Script:XSPool.Other_Config.folder > $Null
+			
 			$ScriptInformation += @{ Data = "Folder"; Value = $Script:XSPool.Other_Config.folder; }
+		}
+		
+		catch
+		{
+			#not there
 		}
 		$ScriptInformation += @{ Data = "Pool License"; Value = $PoolLicense; }
 		$ScriptInformation += @{ Data = "Number of Sockets"; Value = $NumSockets; }
@@ -4202,9 +4213,17 @@ Function OutputPoolGeneral
 				}
 			}
 		}
-		If( validObject $Script:XSPool.Other_Config folder )
+		
+		try
 		{
+			$Script:XSPool.Other_Config.folder > $Null
+			
 			Line 2 "Folder`t`t`t: " $Script:XSPool.Other_Config.folder
+		}
+		
+		catch
+		{
+			#not there
 		}
 		Line 2 "Pool License`t`t: " $PoolLicense
 		Line 2 "Number of Sockets`t: " $NumSockets
@@ -4233,9 +4252,17 @@ Function OutputPoolGeneral
 				}
 			}
 		}
-		If( validObject $Script:XSPool.Other_Config folder )
+		
+		try
 		{
+			$Script:XSPool.Other_Config.folder > $Null
+			
 			$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),$Script:XSPool.Other_Config.folder,$htmlwhite))
+		}
+		
+		catch
+		{
+			#not there
 		}
 		$rowdata += @(,('Pool License',($htmlsilver -bor $htmlbold),$PoolLicense,$htmlwhite))
 		$rowdata += @(,('Number of Sockets',($htmlsilver -bor $htmlbold),$NumSockets,$htmlwhite))
@@ -5318,7 +5345,7 @@ Function ProcessHosts
 	
 	ForEach($XSHost in $Script:XSHosts)
 	{
-		OutputHost $XSHost
+		OutputHostGeneral $XSHost
 		OutputHostCustomFields $XSHost
 		OutputHostAlerts $XSHost
 		OutputHostMultipathing $XSHost
@@ -5328,19 +5355,68 @@ Function ProcessHosts
 	}
 }
 
-Function OutputHost
+Function OutputHostGeneral
 {
 	Param([object]$XSHost)
 	
-	Write-Verbose "$(Get-Date -Format G): `tProcessing Host $($XSHost.name_label)"
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host $($XSHost.name_label) General"
+
+	[array]$xtags = @()
+	ForEach($tag in $XSHost.tags)
+	{
+		$xtags += $tag
+	}
+	If($xtags.count -gt 0)
+	{
+		[array]$xtags = $xtags | Sort-Object
+	}
+	Else
+	{
+		[array]$xtags = @("<None>")
+	}
+
 	If($MSWord -or $PDF)
 	{
-		WriteWordLine 2 0 "Host: $XSHost.name_label"
+		WriteWordLine 2 0 "Host: $($XSHost.name_label)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		$ScriptInformation += @{ Data = "Host name"; Value = $XSHost.name_label; }
-		$ScriptInformation += @{ Data = "CPU model name"; Value = $XSHost.cpu_info.modelname; }
-		$ScriptInformation += @{ Data = "Socket count"; Value = $XSHost.cpu_info.socket_count; }
-		$ScriptInformation += @{ Data = "CPU count"; Value = $XSHost.cpu_info.cpu_count; }
+		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
+		$ScriptInformation += @{ Data = "Description"; Value = $XSHost.name_description; }
+		If($xtags.Count -gt 0)
+		{
+			$ScriptInformation += @{ Data = "Tags"; Value = $xtags[0]; }
+			$cnt = -1
+			ForEach($tmp in $xtags)
+			{
+				$cnt++
+				If($cnt -gt 0)
+				{
+					$ScriptInformation += @{ Data = ""; Value = $tmp; }
+				}
+			}
+		}
+		
+		try
+		{
+			$XSHost.Other_Config.folder > $Null
+			
+			$ScriptInformation += @{ Data = "Folder"; Value = $XSHost.Other_Config.folder; }
+		}
+		
+		catch
+		{
+			#not there
+		}
+		$ScriptInformation += @{ Data = "Pool master"; Value = ""; }
+		$ScriptInformation += @{ Data = "Enabled"; Value = $XSHost.enabled.ToString(); }
+		$ScriptInformation += @{ Data = "iSCSI IQN"; Value = $XSHost.iscsi_iqn; }
+		$ScriptInformation += @{ Data = "Log destination"; Value = ""; }
+		$ScriptInformation += @{ Data = "Server uptime"; Value = ""; }
+		$ScriptInformation += @{ Data = "Toolstack uptime"; Value = ""; }
+		$ScriptInformation += @{ Data = "Domain"; Value = $XSHost.external_auth_service_name; }
+		$ScriptInformation += @{ Data = "UUID"; Value = $XSHost.uuid; }
+		#$ScriptInformation += @{ Data = "CPU model name"; Value = $XSHost.cpu_info.modelname; }
+		#$ScriptInformation += @{ Data = "Socket count"; Value = $XSHost.cpu_info.socket_count; }
+		#$ScriptInformation += @{ Data = "CPU count"; Value = $XSHost.cpu_info.cpu_count; }
 
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 		-Columns Data,Value `
@@ -5362,20 +5438,91 @@ Function OutputHost
 	}
 	If($Text)
 	{
-		Line 1 "Host name: " $XSHost.name_label
-		Line 2 "CPU model name`t: " $XSHost.cpu_info.modelname
-		Line 2 "Socket count`t: " $XSHost.cpu_info.socket_count
-		Line 2 "CPU count`t: " $XSHost.cpu_info.cpu_count
+		Line 1 "Name: " "$($XSHost.name_label)"
+		Line 2 "Description`t: " $XSHost.name_description
+		If($xtags.Count -gt 0)
+		{
+			Line 2 "Tags`t`t: " $xtags[0]
+			$cnt = -1
+			ForEach($tmp in $xtags)
+			{
+				$cnt++
+				If($cnt -gt 0)
+				{
+					Line 4 "  " $tmp
+				}
+			}
+		}
+		
+		try
+		
+		{
+			$XSHost.Other_Config.folder > $Null
+			
+			Line 2 "Folder`t`t: " $XSHost.Other_Config.folder
+		}
+		
+		catch
+		{
+			#not there
+		}
+		Line 2 "Pool master`t: " 
+		Line 2 "Enabled`t`t: " $XSHost.enabled.ToString()
+		Line 2 "iSCSI IQN`t: " $XSHost.iscsi_iqn
+		Line 2 "Log destination`t: " ""
+		Line 2 "Server uptime`t: " ""
+		Line 2 "Toolstack uptime: " ""
+		Line 2 "Domain`t`t: " $XSHost.external_auth_service_name
+		Line 2 "UUID`t`t: " $XSHost.uuid
+		#Line 2 "CPU model name`t: " $XSHost.cpu_info.modelname
+		#Line 2 "Socket count`t: " $XSHost.cpu_info.socket_count
+		#Line 2 "CPU count`t: " $XSHost.cpu_info.cpu_count
 		Line 0 ""
 	}
 	If($HTML)
 	{
-		WriteHTMLLine 2 0 "Host: $XSHost.name_label"
+		WriteHTMLLine 2 0 "Host: $($XSHost.name_label)"
 		$rowdata = @()
-		$columnHeaders = @("Host name",($htmlsilver -bor $htmlbold),$XSHost.name_label,$htmlwhite)
-		$rowdata += @(,('CPU model name',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.modelname,$htmlwhite))
-		$rowdata += @(,('Socket count',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.socket_count,$htmlwhite))
-		$rowdata += @(,('CPU count',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.cpu_count,$htmlwhite))
+		$columnHeaders = @("Name",($htmlsilver -bor $htmlbold),$XSHost.name_label,$htmlwhite)
+		$rowdata += @(,('Description',($htmlsilver -bor $htmlbold),$XSHost.name_description,$htmlwhite))
+		If($xtags.Count -gt 0)
+		{
+			$tmp = $xtags[0].Trim("<",">")
+			$rowdata += @(,('Tags',($htmlsilver -bor $htmlbold),$tmp,$htmlwhite))
+			$cnt = -1
+			ForEach($tmp in $xtags)
+			{
+				$cnt++
+				If($cnt -gt 0)
+				{
+					$tmp = $tmp.Trim("<",">")
+					$rowdata += @(,('',($htmlsilver -bor $htmlbold),$tmp,$htmlwhite))
+				}
+			}
+		}
+		
+		try
+		{
+			$XSHost.Other_Config.folder > $Null
+			
+			$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),$XSHost.Other_Config.folder,$htmlwhite))
+		}
+		
+		catch
+		{
+			#not there
+		}
+		$rowdata += @(,('Pool master',($htmlsilver -bor $htmlbold),"",$htmlwhite))
+		$rowdata += @(,("Enabled",($htmlsilver -bor $htmlbold),$XSHost.enabled.ToString(),$htmlwhite))
+		$rowdata += @(,("iSCSI IQN",($htmlsilver -bor $htmlbold),$XSHost.iscsi_iqn,$htmlwhite))
+		$rowdata += @(,("Log destination",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+		$rowdata += @(,("Server uptime",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+		$rowdata += @(,("Toolstack uptime",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+		$rowdata += @(,("Domain",($htmlsilver -bor $htmlbold),$XSHost.external_auth_service_name,$htmlwhite))
+		$rowdata += @(,("UUID",($htmlsilver -bor $htmlbold),$XSHost.uuid,$htmlwhite))
+		#$rowdata += @(,('CPU model name',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.modelname,$htmlwhite))
+		#$rowdata += @(,('Socket count',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.socket_count,$htmlwhite))
+		#$rowdata += @(,('CPU count',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.cpu_count,$htmlwhite))
 
 		$msg = ""
 		$columnWidths = @("150","250")
@@ -5388,7 +5535,7 @@ Function OutputHost
 Function OutputHostCustomFields
 {
 	Param([object] $XSHost)
-	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Custom Fields"
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host Custom Fields"
 
 	$CustomFields = New-Object System.Collections.ArrayList
 	$OtherConfig = ($XSHost | Get-XenHostProperty -XenProperty OtherConfig -EA 0)
@@ -5585,7 +5732,7 @@ Function OutputHostPowerOn
 	#wake-on-lan is Wake-on-LAN (WoL)
 	#Otherwise, power_on_mode is Custom power-on script /etc/xapi.d/plugins/<value of power_on_mode>
 	
-	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Power On"
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host Power On"
 
 	If($MSWord -or $PDF)
 	{
