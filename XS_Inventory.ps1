@@ -427,9 +427,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.003
+	VERSION: 0.004
 	AUTHOR: Carl Webster
-	LASTEDIT: July 02, 2023
+	LASTEDIT: July 04, 2023
 #>
 
 #endregion
@@ -541,6 +541,22 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
+#.004
+#	For the Pool report section
+#		Added Function OutputPoolPowerOn
+#		Added Function OutputPoolLivePatching
+#		Added Function OutputPoolNetworkOptions
+#		Added Function OutputPoolClustering
+#	For the Host report section
+#		Added Function OutputHostPowerOn
+#		Added the following placeholder functions
+#			OutputHostAlerts
+#			OutputHostMultipathing
+#			OutputHostLogDestination
+#			OutputHostGPU
+#	In Function ProcessScriptSetup
+#		Add getting the pool and hosts by the session's opaque_ref to get all hosts associated with the pool
+#	
 #.003
 #	For the Pool report section
 #		Renamed Fnction OutputPool to OutputPoolGeneral
@@ -548,7 +564,9 @@ Param(
 #		Added Function OutputPoolEmailOptions
 #		Added Function OutputPoolManagementInterfaces
 #			Includes sample code from the XenServer team
+#	For the Host report section
 #		Added Function OutputHostCustomFields
+#	For the VM report section
 #		Added Function OutputVMCustomFields
 #	In Function ProcessScriptSetup
 #		Sort Hosts and VMs by Name_Label so output is in sorted order
@@ -622,9 +640,9 @@ $ErrorActionPreference    = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials  = $Null
-$script:MyVersion         = '0.003'
+$script:MyVersion         = '0.004'
 $Script:ScriptName        = "XS_Inventory.ps1"
-$tmpdate                  = [datetime] "07/02/2023"
+$tmpdate                  = [datetime] "07/04/2023"
 $Script:ReleaseDate       = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -3776,7 +3794,7 @@ Function ProcessScriptSetup
 
 	Write-Verbose "$(Get-Date -Format G): Retrieve XenServer hosts"
 	$tmptext = "XenServer Hosts"
-	$Script:XSHosts = Get-XenHost -EA 0
+	$Script:XSHosts = Get-XenHost -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0
 	If($? -and $Null -ne $Script:XSHosts)
 	{
 		#success
@@ -3797,7 +3815,7 @@ Function ProcessScriptSetup
 	
 	Write-Verbose "$(Get-Date -Format G): Retrieve Pool data"
 	$tmptext = "XenServer Pool"
-	$Script:XSPool = Get-XenPool
+	$Script:XSPool = Get-XenPool -SessionOpaqueRef $Session.opaque_ref -EA 0
 	If($? -and $Null -ne $Script:XSPool)
 	{
 		#success
@@ -3862,7 +3880,7 @@ Function ProcessScriptSetup
 	$tmptext = "Virtual Machines"
 	$tmp = 'true'
 	$strkey = 'HideFromXenCenter'
-	$Script:VMNames = Get-XenVM | `
+	$Script:VMNames = Get-XenVM -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 | `
 	Where-Object {!$_.is_a_template -and `
 			!$_.is_a_snapshot -and `
 			!$_.is_control_domain -and `
@@ -4068,6 +4086,10 @@ Function ProcessPool
 		OutputPoolGeneral
 		OutputPoolCustomFields
 		OutputPoolEmailOptions
+		OutputPoolPowerOn
+		OutputPoolLivePatching
+		OutputPoolNetworkOptions
+		OutputPoolClustering
 		OutputPoolUpdates
 		OutputPoolManagementInterfaces
 	}
@@ -4593,10 +4615,429 @@ Function OutputPoolEmailOptions
 	}
 }
 
+Function OutputPoolPowerOn
+{
+	#cycle through each host and get the power_on_mode and power_on_config properties
+	#if power_on_mode -eq "", then it is Disabled
+	#DRAC is Dell Remote Access Controller (DRAC)
+	#wake-on-lan is Wake-on-LAN (WoL)
+	#Otherwise, power_on_mode is Custom power-on script /etc/xapi.d/plugins/<value of power_on_mode>
+	
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Power On"
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "Power On"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	}
+	If($Text)
+	{
+		Line 1 "Power On"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 2 0 "Power On"
+		$rowdata = @()
+	}
+	
+	[int]$cnt = -1
+	ForEach($XSHost in $Script:XSHosts)
+	{
+		$cnt++
+		If($XSHost.power_on_mode -eq "")
+		{
+			#disabled
+			If($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+				$ScriptInformation += @{ Data = "Power On mode"; Value = "Disabled"; }
+				$ScriptInformation += @{ Data = ""; Value = ""; }
+			}
+			If($Text)
+			{
+				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode`t: " "Disabled"
+				Line 0 ""
+			}
+			If($HTML)
+			{
+				If($cnt -eq 0)
+				{
+					$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+				}
+				Else
+				{
+					$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+					$rowdata += @(,("    Power On mode",($htmlsilver -bor $htmlbold),"Disabled",$htmlwhite))
+					$rowdata += @(,("",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+				}
+			}
+		}
+		ElseIf($XSHost.power_on_mode -eq "DRAC")
+		{
+			[array]$PowerKeys = $XSHost.power_on_config.Keys.Split() 
+			[array]$PowerValues = $XSHost.power_on_config.Values.Split() 
+			If($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+				$ScriptInformation += @{ Data = "Power On mode"; Value = "Dell Remote Access Controller (DRAC)"; }
+				$ScriptInformation += @{ Data = "Configuration options"; Value = ""; }
+
+				[int]$cnt2 = -1
+				ForEach($Item in $PowerKeys)
+				{
+					$cnt2++
+					$Value = $PowerValues[$cnt2]
+					
+					If($Item -like "*power_on_ip*")
+					{
+						$ScriptInformation += @{ Data = "     IP address"; Value = $Value; }
+					}
+					If($Item -like "*power_on_user*")
+					{
+						$ScriptInformation += @{ Data = "     Username"; Value = $Value; }
+					}
+				}
+				$ScriptInformation += @{ Data = ""; Value = ""; }
+			}
+			If($Text)
+			{
+				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode`t: " "Dell Remote Access Controller (DRAC)"
+				Line 2 "Configuration options"
+
+				[int]$cnt2 = -1
+				ForEach($Item in $PowerKeys)
+				{
+					$cnt2++
+					$Value = $PowerValues[$cnt2]
+					
+					If($Item -like "*power_on_ip*")
+					{
+						Line 3 "IP address: " $Value
+					}
+					If($Item -like "*power_on_user*")
+					{
+						Line 3 "Username  : " $Value
+					}
+				}
+				Line 0 ""
+			}
+			If($HTML)
+			{
+				If($cnt -eq 0)
+				{
+					$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+				}
+				Else
+				{
+					$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+				}
+				$rowdata += @(,("Power On mode",($htmlsilver -bor $htmlbold),"Dell Remote Access Controller (DRAC)",$htmlwhite))
+				$rowdata += @(,("Configuration options",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+
+				[int]$cnt2 = -1
+				ForEach($Item in $PowerKeys)
+				{
+					$cnt2++
+					$Value = $PowerValues[$cnt2]
+					
+					If($Item -like "*power_on_ip*")
+					{
+						$rowdata += @(,("     IP address: ",($htmlsilver -bor $htmlbold),$Value,$htmlwhite))
+					}
+					If($Item -like "*power_on_user*")
+					{
+						$rowdata += @(,("     Username: ",($htmlsilver -bor $htmlbold),$Value,$htmlwhite))
+					}
+				}
+				$rowdata += @(,("",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+			}
+		}
+		ElseIf($XSHost.power_on_mode -eq "wake-on-lan")
+		{
+			If($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+				$ScriptInformation += @{ Data = "Power On mode"; Value = "Wake-on-LAN (WoL)"; }
+				$ScriptInformation += @{ Data = ""; Value = ""; }
+			}
+			If($Text)
+			{
+				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode`t: " "Wake-on-LAN (WoL)"
+				Line 0 ""
+			}
+			If($HTML)
+			{
+				If($cnt -eq 0)
+				{
+					$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+				}
+				Else
+				{
+					$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+				}
+				$rowdata += @(,("Power On mode",($htmlsilver -bor $htmlbold),"Wake-on-LAN (WoL)",$htmlwhite))
+				$rowdata += @(,("",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+			}
+		}
+		Else
+		{
+			#custom script
+			[array]$PowerKeys = $XSHost.power_on_config.Keys.Split() 
+			[array]$PowerValues = $XSHost.power_on_config.Values.Split() 
+			If($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+				$ScriptInformation += @{ Data = "Power On mode"; Value = "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"; }
+				$ScriptInformation += @{ Data = "Configuration options"; Value = ""; }
+
+				[int]$cnt2 = -1
+				ForEach($Item in $PowerKeys)
+				{
+					$cnt2++
+					$Value = $PowerValues[$cnt2]
+					
+					$ScriptInformation += @{ Data = "     Key: $Item"; Value = "Value: $Value"; }
+				}
+				$ScriptInformation += @{ Data = ""; Value = ""; }
+			}
+			If($Text)
+			{
+				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode`t: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
+				Line 2 "Configuration options"
+
+				[int]$cnt2 = -1
+				ForEach($Item in $PowerKeys)
+				{
+					$cnt2++
+					$Value = $PowerValues[$cnt2]
+					Line 3 "Key  : " $Item
+					Line 3 "Value: " $Value
+					Line 0 ""
+				}
+				Line 0 ""
+			}
+			If($HTML)
+			{
+				If($cnt -eq 0)
+				{
+					$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+				}
+				Else
+				{
+					$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+				}
+				$rowdata += @(,("Power On mode",($htmlsilver -bor $htmlbold),"Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)",$htmlwhite))
+				$rowdata += @(,("Configuration options",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+
+				[int]$cnt2 = -1
+				ForEach($Item in $PowerKeys)
+				{
+					$cnt2++
+					$Value = $PowerValues[$cnt2]
+				
+					$rowdata += @(,("     Key: $Item",($htmlsilver -bor $htmlbold),"Value: $Value",$htmlwhite))
+				}
+				$rowdata += @(,("",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+			}
+		}	
+	}
+
+	If($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+		-Columns Data,Value `
+		-List `
+		-Format $wdTableGrid `
+		-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 300;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		#Nothing
+	}
+	If($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150","300")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolLivePatching
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Live Patching"
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "Live Patching"
+		If($Script:XSPool.live_patching_disabled)
+		{
+			WriteWordLine 0 0 "Live patching is Disabled"
+		}
+		Else
+		{
+			WriteWordLine 0 0 "Live patching is Enabled"
+		}
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		Line 1 "Live Patching"
+		If($Script:XSPool.live_patching_disabled)
+		{
+			Line 2 "Live patching is Disabled"
+		}
+		Else
+		{
+			Line 2 "Live patching is Enabled"
+		}
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 2 0 "Live Patching"
+		If($Script:XSPool.live_patching_disabled)
+		{
+			WriteHTMLLine 0 0 "Live patching is Disabled"
+		}
+		Else
+		{
+			WriteHTMLLine 0 0 "Live patching is Enabled"
+		}
+	}
+}
+
+Function OutputPoolNetworkOptions
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Network Options"
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "Network Options"
+		If($Script:XSPool.igmp_snooping_enabled)
+		{
+			WriteWordLine 0 0 "IGMP snooping is Enabled"
+		}
+		Else
+		{
+			WriteWordLine 0 0 "IGMP snooping is Disabled"
+		}
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		Line 1 "Network Options"
+		If($Script:XSPool.igmp_snooping_enabled)
+		{
+			Line 2 "IGMP snooping is Enabled"
+		}
+		Else
+		{
+			Line 2 "IGMP snooping is Disabled"
+		}
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 2 0 "Network Options"
+		If($Script:XSPool.igmp_snooping_enabled)
+		{
+			WriteHTMLLine 0 0 "IGMP snooping is Enabled"
+		}
+		Else
+		{
+			WriteHTMLLine 0 0 "IGMP snooping is Disabled"
+		}
+	}
+}
+
+Function OutputPoolClustering
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Clustering"
+	
+	$results = Get-XenCluster -SessionOpaqueRef $Script:Session.opaque_ref -EA 0
+
+	If(!$?)
+	{
+		Write-Warning "
+		`n
+		Unable to retrieve Clustering for Pool $Pool.name_label`
+		"
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 0 "Unable to retrieve Clustering for Pool $Pool.name_label"
+		}
+		If($Text)
+		{
+			Line 0 "Unable to retrieve Clustering for Pool $Pool.name_label"
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 0 "Unable to retrieve Clustering for Pool $Pool.name_label"
+		}
+	}
+	ElseIf($? -and $Null -eq $results)
+	{
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 2 0 "Clustering"
+			WriteWordLine 0 0 "Clustering is Disabled"
+			WriteWordLine 0 0 ""
+		}
+		If($Text)
+		{
+			Line 1 "Clustering"
+			Line 2 "Clustering is Disabled"
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 2 0 "Clustering"
+			WriteHTMLLine 0 0 "Clustering is Disabled"
+		}
+	}
+	Else
+	{
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 2 0 "Clustering"
+			WriteWordLine 0 0 "Clustering is Enabled"
+			WriteWordLine 0 0 ""
+		}
+		If($Text)
+		{
+			Line 1 "Clustering"
+			Line 2 "Clustering is Enabled"
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 2 0 "Clustering"
+			WriteHTMLLine 0 0 "Clustering is Enabled"
+		}
+	}
+}
+
 Function OutputPoolUpdates
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Updates"
-	$Updates = Get-XenPoolPatch -EA 0 4>$Null| Select-Object name_label,version | Sort-Object name_label
+	$Updates = Get-XenPoolPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | Select-Object name_label,version | Sort-Object name_label
 	
 	If($MSWord -or $PDF)
 	{
@@ -4663,7 +5104,6 @@ Function OutputPoolUpdates
 
 Function OutputPoolManagementInterfaces
 {
-	
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Management Interfaces"
 	#Sample code from the XenServer team
 	<#
@@ -4689,52 +5129,40 @@ Function OutputPoolManagementInterfaces
 		}
 	#>
 
-	$Servers = Get-XenHost -EA 0
-	
-	If(!$?)
+	<#ForEach ($Server in $Servers) 
 	{
-		Write-Warning "
-		`n
-		Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label`
-		"
-		If($MSWord -or $PDF)
-		{
-			WriteWordLine 0 0 "Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label"
-		}
-		If($Text)
-		{
-			Line 0 "Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label"
-		}
-		If($HTML)
-		{
-			WriteHTMLLine 0 0 "Unable to retrieve Servers for Management Interfaces for Pool $Pool.name_label"
-		}
-	}
-	ElseIf($? -and $Null -eq $Servers)
-	{
-		Write-Host "
-	No Servers found for Management Interfaces for Pool $Pool.name_label.
-		" -ForegroundColor White
-		If($MSWord -or $PDF)
-		{
-			WriteWordLine 0 0 "No Servers found for Management Interfaces for Pool $Pool.name_label"
-		}
-		If($Text)
-		{
-			Line 0 "No Servers found for Management Interfaces for Pool $Pool.name_label"
-		}
-		If($HTML)
-		{
-			WriteHTMLLine 0 0 "No Servers found for Management Interfaces for Pool $Pool.name_label"
-		}
-	}
-	Else
-	{
-		$Servers = $Servers | Sort-Object hostname
+		Write-host "DNS hostname:" $Server.hostname
 		
-		<#ForEach ($Server in $Servers) 
+		$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+
+		ForEach ($pif in $mPifs) 
 		{
-			Write-host "DNS hostname:" $Server.hostname
+			If ($pif.IP) 
+			{
+				Write-Host "Management interface on" $server.name_label ":" $pif.IP
+			}
+			ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+			{
+				Write-Host "Management interface on" $server.name_label ":" "DHCP"
+			}
+			Else 
+			{
+				Write-Host "Management interface on" $server.name_label ":" "Unknown"
+			}
+		} 
+	}#>
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "Management Interfaces"
+		$MITable = @()
+
+		ForEach ($Server in $Script:XSHosts) 
+		{
+			$MITable += @{
+				Column1 = "DNS hostname on $($server.name_label):"
+				Column2 = $Server.hostname
+			}
 			
 			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
 
@@ -4742,163 +5170,130 @@ Function OutputPoolManagementInterfaces
 			{
 				If ($pif.IP) 
 				{
-					Write-Host "Management interface on" $server.name_label ":" $pif.IP
+					$MITable += @{
+						Column1 = "Management interface on $($server.name_label):"
+						Column2 = "$($pif.IP)"
+					}
 				}
 				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
 				{
-					Write-Host "Management interface on" $server.name_label ":" "DHCP"
+					$MITable += @{
+						Column1 = "Management interface on $($server.name_label):"
+						Column2 = "DHCP"
+					}
 				}
 				Else 
 				{
-					Write-Host "Management interface on" $server.name_label ":" "Unknown"
+					$MITable += @{
+						Column1 = "Management interface on $($server.name_label):"
+						Column2 = "Unknown"
+					}
 				}
 			} 
-		}#>
-
-		If($MSWord -or $PDF)
-		{
-			WriteWordLine 2 0 "Management Interfaces"
-			$MITable = @()
-
-			ForEach ($Server in $Servers) 
-			{
-				$MITable += @{
-					Column1 = "DNS hostname on $($server.name_label):"
-					Column2 = $Server.hostname
-				}
-				
-				$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
-
-				ForEach ($pif in $mPifs) 
-				{
-					If ($pif.IP) 
-					{
-						$MITable += @{
-							Column1 = "Management interface on $($server.name_label):"
-							Column2 = "$($pif.IP)"
-						}
-					}
-					ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
-					{
-						$MITable += @{
-							Column1 = "Management interface on $($server.name_label):"
-							Column2 = "DHCP"
-						}
-					}
-					Else 
-					{
-						$MITable += @{
-							Column1 = "Management interface on $($server.name_label):"
-							Column2 = "Unknown"
-						}
-					}
-				} 
-			}
-
-			If($MITable.Count -gt 0)
-			{
-				$Table = AddWordTable -Hashtable $MITable `
-				-Columns Column1, Column2 `
-				-Headers "", "" `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
-
-				SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-
-				$Table.Columns.Item(1).Width = 200;
-				$Table.Columns.Item(2).Width = 100;
-				
-				$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
-
-				FindWordDocumentEnd
-				$Table = $Null
-				WriteWordLine 0 0 ""
-			}
 		}
-		If($Text)
+
+		If($MITable.Count -gt 0)
 		{
-			Line 2 "Management Interfaces"
-			Line 2 "=============================================================="
-			#		1234567890123456789012345678901234567890SS12345678901234567890
-			#		Management interface on 'XenServer1       255.255.255.255
-			ForEach($Server in $Servers)
-			{
-				Line 2 ( "{0,-40}  {1,-20}" -f "DNS hostname on $($server.name_label):", $Server.hostname)
-				
-				$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+			$Table = AddWordTable -Hashtable $MITable `
+			-Columns Column1, Column2 `
+			-Headers "", "" `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
 
-				ForEach ($pif in $mPifs) 
-				{
-					If ($pif.IP) 
-					{
-						Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "$($pif.IP)")
-					}
-					ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
-					{
-						Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "DHCP")
-					}
-					Else 
-					{
-						Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "Unknown")
-					}
-				} 
-			}
-			Line 0 ""
-		}
-		If($HTML)
-		{
-			WriteHTMLLine 2 0 "Management Interfaces"
+			SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$rowdata = @()
+			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(2).Width = 100;
+			
+			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
 
-			ForEach($Server in $Servers)
-			{
-				$rowdata += @(,(
-					"DNS hostname on $($server.name_label):",$htmlwhite,
-					$Server.hostname,$htmlwhite)
-				)
-				
-				$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
-
-				ForEach ($pif in $mPifs) 
-				{
-					If ($pif.IP) 
-					{
-						$rowdata += @(,(
-							"Management interface on $($server.name_label):",$htmlwhite,
-							"$($pif.IP)",$htmlwhite)
-						)
-					}
-					ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
-					{
-						$rowdata += @(,(
-							"Management interface on $($server.name_label):",$htmlwhite,
-							"DHCP",$htmlwhite)
-						)
-					}
-					Else 
-					{
-						$rowdata += @(,(
-							"Management interface on $($server.name_label):",$htmlwhite,
-							"Unknown",$htmlwhite)
-						)
-					}
-				} 
-			}
-
-			$columnHeaders = @(
-				"",($Script:htmlsb),
-				"",($Script:htmlsb)
-			)
-
-			$msg = ""
-			$columnWidths = @("250","100")
-			FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-			WriteHTMLLine 0 0 ""
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
 		}
 	}
-}
+	If($Text)
+	{
+		Line 2 "Management Interfaces"
+		Line 2 "=============================================================="
+		#		1234567890123456789012345678901234567890SS12345678901234567890
+		#		Management interface on 'XenServer1       255.255.255.255
+		ForEach($Server in $Script:XSHosts)
+		{
+			Line 2 ( "{0,-40}  {1,-20}" -f "DNS hostname on $($server.name_label):", $Server.hostname)
+			
+			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
 
+			ForEach ($pif in $mPifs) 
+			{
+				If ($pif.IP) 
+				{
+					Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "$($pif.IP)")
+				}
+				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+				{
+					Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "DHCP")
+				}
+				Else 
+				{
+					Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "Unknown")
+				}
+			} 
+		}
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 2 0 "Management Interfaces"
+
+		$rowdata = @()
+
+		ForEach($Server in $Script:XSHosts)
+		{
+			$rowdata += @(,(
+				"DNS hostname on $($server.name_label):",$htmlwhite,
+				$Server.hostname,$htmlwhite)
+			)
+			
+			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+
+			ForEach ($pif in $mPifs) 
+			{
+				If ($pif.IP) 
+				{
+					$rowdata += @(,(
+						"Management interface on $($server.name_label):",$htmlwhite,
+						"$($pif.IP)",$htmlwhite)
+					)
+				}
+				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+				{
+					$rowdata += @(,(
+						"Management interface on $($server.name_label):",$htmlwhite,
+						"DHCP",$htmlwhite)
+					)
+				}
+				Else 
+				{
+					$rowdata += @(,(
+						"Management interface on $($server.name_label):",$htmlwhite,
+						"Unknown",$htmlwhite)
+					)
+				}
+			} 
+		}
+
+		$columnHeaders = @(
+			"",($Script:htmlsb),
+			"",($Script:htmlsb)
+		)
+
+		$msg = ""
+		$columnWidths = @("250","100")
+		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
 #endregion
 
 #region hosts
@@ -4925,6 +5320,11 @@ Function ProcessHosts
 	{
 		OutputHost $XSHost
 		OutputHostCustomFields $XSHost
+		OutputHostAlerts $XSHost
+		OutputHostMultipathing $XSHost
+		OutputHostLogDestination $XSHost
+		OutputHostPowerOn $XSHost
+		OutputHostGPU $XSHost
 	}
 }
 
@@ -5158,6 +5558,281 @@ Function OutputHostCustomFields
 			WriteHTMLLine 0 0 ""
 		}
 	}
+}
+
+Function OutputHostAlerts
+{
+	Param([object]$XSHost)
+}
+
+Function OutputHostMultipathing
+{
+	Param([object]$XSHost)
+}
+
+Function OutputHostLogDestination
+{
+	Param([object]$XSHost)
+}
+
+Function OutputHostPowerOn
+{
+	Param([object]$XSHost)
+
+	#for the host, get the power_on_mode and power_on_config properties
+	#if power_on_mode -eq "", then it is Disabled
+	#DRAC is Dell Remote Access Controller (DRAC)
+	#wake-on-lan is Wake-on-LAN (WoL)
+	#Otherwise, power_on_mode is Custom power-on script /etc/xapi.d/plugins/<value of power_on_mode>
+	
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Power On"
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Power On"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	}
+	If($Text)
+	{
+		Line 2 "Power On"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "Power On"
+		$rowdata = @()
+	}
+	
+	[int]$cnt = -1
+	$cnt++
+	If($XSHost.power_on_mode -eq "")
+	{
+		#disabled
+		If($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+			$ScriptInformation += @{ Data = "Power On mode"; Value = "Disabled"; }
+		}
+		If($Text)
+		{
+			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode`t: " "Disabled"
+		}
+		If($HTML)
+		{
+			If($cnt -eq 0)
+			{
+				$cnt++
+				$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+			}
+			Else
+			{
+				$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+				$rowdata += @(,("    Power On mode",($htmlsilver -bor $htmlbold),"Disabled",$htmlwhite))
+			}
+		}
+	}
+	ElseIf($XSHost.power_on_mode -eq "DRAC")
+	{
+		[array]$PowerKeys = $XSHost.power_on_config.Keys.Split() 
+		[array]$PowerValues = $XSHost.power_on_config.Values.Split() 
+		If($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+			$ScriptInformation += @{ Data = "Power On mode"; Value = "Dell Remote Access Controller (DRAC)"; }
+			$ScriptInformation += @{ Data = "Configuration options"; Value = ""; }
+
+			[int]$cnt2 = -1
+			ForEach($Item in $PowerKeys)
+			{
+				$cnt2++
+				$Value = $PowerValues[$cnt2]
+				
+				If($Item -like "*power_on_ip*")
+				{
+					$ScriptInformation += @{ Data = "     IP address"; Value = $Value; }
+				}
+				If($Item -like "*power_on_user*")
+				{
+					$ScriptInformation += @{ Data = "     Username"; Value = $Value; }
+				}
+			}
+		}
+		If($Text)
+		{
+			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode`t: " "Dell Remote Access Controller (DRAC)"
+			Line 3 "Configuration options"
+
+			[int]$cnt2 = -1
+			ForEach($Item in $PowerKeys)
+			{
+				$cnt2++
+				$Value = $PowerValues[$cnt2]
+				
+				If($Item -like "*power_on_ip*")
+				{
+					Line 4 "IP address: " $Value
+				}
+				If($Item -like "*power_on_user*")
+				{
+					Line 4 "Username  : " $Value
+				}
+			}
+		}
+		If($HTML)
+		{
+			If($cnt -eq 0)
+			{
+				$cnt++
+				$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+			}
+			Else
+			{
+				$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+			}
+			$rowdata += @(,("Power On mode",($htmlsilver -bor $htmlbold),"Dell Remote Access Controller (DRAC)",$htmlwhite))
+			$rowdata += @(,("Configuration options",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+
+			[int]$cnt2 = -1
+			ForEach($Item in $PowerKeys)
+			{
+				$cnt2++
+				$Value = $PowerValues[$cnt2]
+				
+				If($Item -like "*power_on_ip*")
+				{
+					$rowdata += @(,("     IP address: ",($htmlsilver -bor $htmlbold),$Value,$htmlwhite))
+				}
+				If($Item -like "*power_on_user*")
+				{
+					$rowdata += @(,("     Username: ",($htmlsilver -bor $htmlbold),$Value,$htmlwhite))
+				}
+			}
+		}
+	}
+	ElseIf($XSHost.power_on_mode -eq "wake-on-lan")
+	{
+		If($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+			$ScriptInformation += @{ Data = "Power On mode"; Value = "Wake-on-LAN (WoL)"; }
+		}
+		If($Text)
+		{
+			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode`t: " "Wake-on-LAN (WoL)"
+		}
+		If($HTML)
+		{
+			If($cnt -eq 0)
+			{
+				$cnt++
+				$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+			}
+			Else
+			{
+				$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+			}
+			$rowdata += @(,("Power On mode",($htmlsilver -bor $htmlbold),"Wake-on-LAN (WoL)",$htmlwhite))
+		}
+	}
+	Else
+	{
+		#custom script
+		[array]$PowerKeys = $XSHost.power_on_config.Keys.Split() 
+		[array]$PowerValues = $XSHost.power_on_config.Values.Split() 
+		If($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
+			$ScriptInformation += @{ Data = "Power On mode"; Value = "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"; }
+			$ScriptInformation += @{ Data = "Configuration options"; Value = ""; }
+
+			[int]$cnt2 = -1
+			ForEach($Item in $PowerKeys)
+			{
+				$cnt2++
+				$Value = $PowerValues[$cnt2]
+				
+				$ScriptInformation += @{ Data = "     Key: $Item"; Value = "Value: $Value"; }
+			}
+		}
+		If($Text)
+		{
+			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode`t: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
+			Line 3 "Configuration options"
+
+			[int]$cnt2 = -1
+			ForEach($Item in $PowerKeys)
+			{
+				$cnt2++
+				$Value = $PowerValues[$cnt2]
+				Line 4 "Key  : " $Item
+				Line 4 "Value: " $Value
+				Line 0 ""
+			}
+		}
+		If($HTML)
+		{
+			If($cnt -eq 0)
+			{
+				$cnt++
+				$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite)
+			}
+			Else
+			{
+				$rowdata += @(,("Server",($htmlsilver -bor $htmlbold),"$($XSHost.Name_Label)",$htmlwhite))
+			}
+			$rowdata += @(,("Power On mode",($htmlsilver -bor $htmlbold),"Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)",$htmlwhite))
+			$rowdata += @(,("Configuration options",($htmlsilver -bor $htmlbold),"",$htmlwhite))
+
+			[int]$cnt2 = -1
+			ForEach($Item in $PowerKeys)
+			{
+				$cnt2++
+				$Value = $PowerValues[$cnt2]
+			
+				$rowdata += @(,("     Key: $Item",($htmlsilver -bor $htmlbold),"Value: $Value",$htmlwhite))
+			}
+		}
+	}	
+
+	If($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+		-Columns Data,Value `
+		-List `
+		-Format $wdTableGrid `
+		-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 300;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150","300")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputHostGPU
+{
+	Param([object]$XSHost)
 }
 #endregion
 
