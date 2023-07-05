@@ -469,9 +469,9 @@ OUTPUTS
 NOTES
 
         NAME: XS_Inventory.ps1
-        VERSION: 0.001
-        AUTHOR: Carl Webster
-        LASTEDIT: June 27, 2023
+        VERSION: 0.006
+        AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
+        LASTEDIT: July 5, 2023
 
 EXAMPLES
 
