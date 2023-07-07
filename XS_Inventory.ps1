@@ -427,9 +427,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.006
+	VERSION: 0.007
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 05, 2023
+	LASTEDIT: July 07, 2023
 #>
 
 #endregion
@@ -541,6 +541,19 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
+#.007
+#	Added data to the following Functions:
+#		OutputHostLicense
+#		OutputHostVersion
+#		OutputHostManagement
+#   Modified the folowing functions
+#       OutputPoolUpdates
+#       OutputPoolGeneral
+#       OutputHostGeneral
+#	Added the following Functions:
+#		OutputHostNICs
+#		OutputHostNetworking
+#
 #.006
 #	Added Citrix CTA John Billekens as a script coauthor
 #	Added data to the following Functions:
@@ -624,7 +637,6 @@ Function AbortScript
 		If( $wordprocess -and $wordprocess.Id -gt 0)
 		{
 			Write-Verbose "$(Get-Date -Format G): WinWord Process is still running. Attempting to stop WinWord Process # $($wordprocess.Id)"
-			Stop-Process $wordprocess.Id -EA 0
 		}
 	}
 	
@@ -3749,7 +3761,11 @@ Function ProcessScriptSetup
 	$ip = $Script:ServerName -as [System.Net.IpAddress]
 	If($ip)
 	{
-		$Result = [System.Net.Dns]::gethostentry($ip)
+		try { 
+			$Result = [System.Net.Dns]::gethostentry($ip) 
+		} catch {
+			$Result = $null
+		}
 		
 		If($? -and $Null -ne $Result)
 		{
@@ -4155,6 +4171,16 @@ Function OutputPoolGeneral
 		Default					{$PoolLicense = "Unable to determine Pool License: $($Script:PoolMasterInfo.edition)"}
 	}
 	
+	If ([String]::IsNullOrEmpty($($Script:XSPool.Other_Config["folder"])))
+	{
+		$folderName = "None"
+	}
+	Else 
+	{
+		$folderName = $Script:XSPool.Other_Config["folder"]
+	}
+
+
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool data"
 	If($MSWord -or $PDF)
 	{
@@ -4175,7 +4201,7 @@ Function OutputPoolGeneral
 				}
 			}
 		}
-		
+		<#
 		try
 		{
 			$Script:XSPool.Other_Config.folder > $Null
@@ -4187,6 +4213,8 @@ Function OutputPoolGeneral
 		{
 			#not there
 		}
+		#>
+		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
 		$ScriptInformation += @{ Data = "Pool License"; Value = $PoolLicense; }
 		$ScriptInformation += @{ Data = "Number of Sockets"; Value = $NumSockets; }
 		$ScriptInformation += @{ Data = "XenServer Version"; Value = $Script:PoolMasterInfo.software_version.product_version_text_short; }
@@ -4212,11 +4240,11 @@ Function OutputPoolGeneral
 	If($Text)
 	{
 		Line 1 "General"
-		Line 2 "Pool name`t`t: " $Script:XSPool.name_label
-		Line 2 "Description`t`t: " $Script:XSPool.name_description
+		Line 2 "Pool name`t`t`t: " $Script:XSPool.name_label
+		Line 2 "Description`t`t`t: " $Script:XSPool.name_description
 		If($xtags.Count -gt 0)
 		{
-			Line 2 "Tags`t`t`t: " $xtags[0]
+			Line 2 "Tags`t`t`t`t: " $xtags[0]
 			$cnt = -1
 			ForEach($tmp in $xtags)
 			{
@@ -4227,7 +4255,7 @@ Function OutputPoolGeneral
 				}
 			}
 		}
-		
+		<#
 		try
 		{
 			$Script:XSPool.Other_Config.folder > $Null
@@ -4239,10 +4267,12 @@ Function OutputPoolGeneral
 		{
 			#not there
 		}
+		#>
+		Line 2 "Folder`t`t`t`t: " $folderName
 		Line 2 "Pool License`t`t: " $PoolLicense
 		Line 2 "Number of Sockets`t: " $NumSockets
 		Line 2 "XenServer Version`t: " $Script:PoolMasterInfo.software_version.product_version_text_short
-		Line 2 "UUID`t`t`t: " $Script:XSPool.uuid
+		Line 2 "UUID`t`t`t`t: " $Script:XSPool.uuid
 		Line 0 ""
 	}
 	If($HTML)
@@ -4266,7 +4296,7 @@ Function OutputPoolGeneral
 				}
 			}
 		}
-		
+		<#
 		try
 		{
 			$Script:XSPool.Other_Config.folder > $Null
@@ -4278,6 +4308,8 @@ Function OutputPoolGeneral
 		{
 			#not there
 		}
+		#>
+		$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),$folderName,$htmlwhite))
 		$rowdata += @(,('Pool License',($htmlsilver -bor $htmlbold),$PoolLicense,$htmlwhite))
 		$rowdata += @(,('Number of Sockets',($htmlsilver -bor $htmlbold),$NumSockets,$htmlwhite))
 		$rowdata += @(,('XenServer Version',($htmlsilver -bor $htmlbold),$Script:PoolMasterInfo.software_version.product_version_text_short,$htmlwhite))
@@ -4696,7 +4728,7 @@ Function OutputPoolPowerOn
 			}
 			If($Text)
 			{
-				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
+				Line 2 "Server`t`t`t: " "$($XSHost.Name_Label)"
 				Line 2 "Power On mode`t: " "Disabled"
 				Line 0 ""
 			}
@@ -5115,7 +5147,7 @@ Function OutputPoolUpdates
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Updates"
 	$Updates = Get-XenPoolPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | Select-Object name_label,version | Sort-Object name_label
-	
+
 	If($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $WordTable = @();
@@ -5148,6 +5180,7 @@ Function OutputPoolUpdates
 	If($Text)
 	{
 		Line 1 "Updates"
+		<#
 		Line 2 "Fully applied`t: " "$($Updates[0].name_label) (version $($tmp.version))"
 		$cnt = -1
 		ForEach($tmp in $Updates)
@@ -5158,10 +5191,18 @@ Function OutputPoolUpdates
 				Line 4 "  " "$($tmp.name_label) (version $($tmp.version))"
 			}
 		}
+		#>
+		Line 2 "Fully applied`t: " ""
+		ForEach($tmp in $Updates)
+		{
+			Line 3 "" "$($tmp.name_label) (version $($tmp.version))"
+		}
+
 		Line 0 ""
 	}
 	If($HTML)
 	{
+		WriteHTMLLine 2 0 "Updates"
 		$rowdata = @()
 
 		ForEach($tmp in $Updates)
@@ -5173,8 +5214,9 @@ Function OutputPoolUpdates
 		$columnHeaders = @(
 		'Fully applied',($htmlsilver -bor $htmlbold))
 
-		$msg = "Updates"
-		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders
+		$msg = ""
+		$columnWidths = @("150")
+		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 	}
 	
 }
@@ -5401,6 +5443,13 @@ Function ProcessHosts
 		OutputHostMultipathing $XSHost
 		OutputHostLogDestination $XSHost
 		OutputHostPowerOn $XSHost
+		OutputHostLicense $XSHost
+		OutputHostVersion $XSHost
+		OutputHostManagement $XSHost
+		OutputHostMemory $XSHost
+		OutputHostCPUs $XSHost
+		OutputHostNetworking $XSHost
+		OutputHostNICs $XSHost
 		OutputHostGPU $XSHost
 	}
 }
@@ -5463,6 +5512,14 @@ Function OutputHostGeneral
 		$AgentUptime.Days,
 		$AgentUptime.Hours,
 		$AgentUptime.Minutes)
+	If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
+	{
+		$folderName = "None"
+	} Else 
+	{
+		$folderName = $XSHost.Other_Config["folder"]
+	}
+
 
 	If($MSWord -or $PDF)
 	{
@@ -5484,6 +5541,7 @@ Function OutputHostGeneral
 			}
 		}
 		
+		<#
 		try
 		{
 			$XSHost.Other_Config.folder > $Null
@@ -5495,7 +5553,9 @@ Function OutputHostGeneral
 		{
 			#not there
 		}
+		#>
 		$ScriptInformation += @{ Data = "Pool master"; Value = $IAmThePoolMaster; }
+		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
 		$ScriptInformation += @{ Data = "Enabled"; Value = $XSHost.enabled.ToString(); }
 		$ScriptInformation += @{ Data = "iSCSI IQN"; Value = $XSHost.iscsi_iqn; }
 		$ScriptInformation += @{ Data = "Log destination"; Value = $LogLocation; }
@@ -5527,11 +5587,11 @@ Function OutputHostGeneral
 	}
 	If($Text)
 	{
-		Line 1 "Name: " "$($XSHost.name_label)"
-		Line 2 "Description`t: " $XSHost.name_description
+		Line 1 "Name`t`t`t`t: " "$($XSHost.name_label)"
+		Line 2 "Description`t`t: " $XSHost.name_description
 		If($xtags.Count -gt 0)
 		{
-			Line 2 "Tags`t`t: " $xtags[0]
+			Line 2 "Tags`t`t`t: " $xtags[0]
 			$cnt = -1
 			ForEach($tmp in $xtags)
 			{
@@ -5543,26 +5603,29 @@ Function OutputHostGeneral
 			}
 		}
 		
+		<#
 		try
 		
 		{
 			$XSHost.Other_Config.folder > $Null
 			
-			Line 2 "Folder`t`t: " $XSHost.Other_Config.folder
+			Line 2 "Folder`t`t`t: " $XSHost.Other_Config.folder
 		}
 		
 		catch
 		{
 			#not there
 		}
-		Line 2 "Pool master`t: " $IAmThePoolMaster
-		Line 2 "Enabled`t`t: " $XSHost.enabled.ToString()
-		Line 2 "iSCSI IQN`t: " $XSHost.iscsi_iqn
+		#>
+		Line 2 "Pool master`t`t: " $IAmThePoolMaster
+		Line 2 "Folder`t`t`t: " $folderName
+		Line 2 "Enabled`t`t`t: " $XSHost.enabled.ToString()
+		Line 2 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
 		Line 2 "Log destination`t: " $LogLocation
 		Line 2 "Server uptime`t: " $ServerUptimeString
 		Line 2 "Toolstack uptime: " $AgentUptimeString
-		Line 2 "Domain`t`t: " $XSHost.external_auth_service_name
-		Line 2 "UUID`t`t: " $XSHost.uuid
+		Line 2 "Domain`t`t`t: " $XSHost.external_auth_service_name
+		Line 2 "UUID`t`t`t: " $XSHost.uuid
 		#Line 2 "CPU model name`t: " $XSHost.cpu_info.modelname
 		#Line 2 "Socket count`t: " $XSHost.cpu_info.socket_count
 		#Line 2 "CPU count`t: " $XSHost.cpu_info.cpu_count
@@ -5589,7 +5652,7 @@ Function OutputHostGeneral
 				}
 			}
 		}
-		
+		<#
 		try
 		{
 			$XSHost.Other_Config.folder > $Null
@@ -5601,13 +5664,15 @@ Function OutputHostGeneral
 		{
 			#not there
 		}
+		#>
 		$rowdata += @(,('Pool master',($htmlsilver -bor $htmlbold),$IAmThePoolMaster,$htmlwhite))
+		$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),"$folderName",$htmlwhite))
 		$rowdata += @(,("Enabled",($htmlsilver -bor $htmlbold),$XSHost.enabled.ToString(),$htmlwhite))
 		$rowdata += @(,("iSCSI IQN",($htmlsilver -bor $htmlbold),$XSHost.iscsi_iqn,$htmlwhite))
 		$rowdata += @(,("Log destination",($htmlsilver -bor $htmlbold),$LogLocation,$htmlwhite))
 		$rowdata += @(,("Server uptime",($htmlsilver -bor $htmlbold),$ServerUptimeString,$htmlwhite))
 		$rowdata += @(,("Toolstack uptime",($htmlsilver -bor $htmlbold),$AgentUptimeString,$htmlwhite))
-		$rowdata += @(,("Domain",($htmlsilver -bor $htmlbold),$XSHost.external_auth_service_name,$htmlwhite))
+		$rowdata += @(,("Domain",($htmlsilver -bor $htmlbold),"$($XSHost.external_auth_service_name)",$htmlwhite))
 		$rowdata += @(,("UUID",($htmlsilver -bor $htmlbold),$XSHost.uuid,$htmlwhite))
 		#$rowdata += @(,('CPU model name',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.modelname,$htmlwhite))
 		#$rowdata += @(,('Socket count',($htmlsilver -bor $htmlbold),$XSHost.cpu_info.socket_count,$htmlwhite))
@@ -5850,7 +5915,7 @@ Function OutputHostPowerOn
 		}
 		If($Text)
 		{
-			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Server`t`t`t: " "$($XSHost.Name_Label)"
 			Line 3 "Power On mode`t: " "Disabled"
 		}
 		If($HTML)
@@ -5994,7 +6059,7 @@ Function OutputHostPowerOn
 		}
 		If($Text)
 		{
-			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Server`t`t`t: " "$($XSHost.Name_Label)"
 			Line 3 "Power On mode`t: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
 			Line 3 "Configuration options"
 
@@ -6066,108 +6131,667 @@ Function OutputHostPowerOn
 	}
 }
 
-Function OutputHostPIF
+function OutputHostLicense
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Network Interfaces"
-	$XSPIFs = $XSHost.PIFs | Get-XenPIF | Sort-Object -Property device,VLAN
-	$XSHostName = $XSHost.Name_Label
-	$nrPIFs = $XSPIFs.Count
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host License Details"
+
+	$licenseExpiryDate = [datetime]::parseexact($XSHost.license_params["expiry"],"yyyyMMddTHH:mm:ssZ",$([cultureinfo]::InvariantCulture))
+	If (($XSHost.license_server["address"] -like "localhost") -or ([String]::IsNullOrEmpty($($XSHost.license_params["license_type"]))) -or ($licenseExpiryDate -lt (Get-Date).AddDays(30)))
+	{
+		$licenseStatus = "Unlicensed"
+	}
+	Else
+	{
+		$licenseStatus = "Licensed"
+	} 
+
+
 
 	If($MSWord -or $PDF)
 	{
-		WriteWordLine 3 0 "Network Interfaces"
+		WriteWordLine 3 0 "License Details"
 	}
 	If($Text)
 	{
-		Line 2 "Network Interfaces"
+		Line 2 "License Details"
 	}
 	If($HTML)
 	{
-		WriteHTMLLine 3 0 "Network Interfaces"
+		WriteHTMLLine 3 0 "License Details"
 	}
 
-	If($nrPIFs -lt 1)
+	If($MSWord -or $PDF)
 	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+
+	}
+	If($Text)
+	{
+	}
+	If($HTML)
+	{
+		$rowdata = @()
+	}
 
 		If($MSWord -or $PDF)
 		{
-			WriteWordLine 0 1 "There are no Network Interfaces configured for Host $XSHostName"
+			$ScriptInformation += @{ Data = "Status"; Value = $licenseStatus; }
+			$ScriptInformation += @{ Data = "License"; Value = "$($XSHost.license_params["sku_marketing_name"])"; }
+			$ScriptInformation += @{ Data = "Number of Sockets"; Value = $($XSHost.license_params["sockets"]); }
+			$ScriptInformation += @{ Data = "License Server Address"; Value = "$($XSHost.license_server["address"])"; }
+			$ScriptInformation += @{ Data = "License Server Port"; Value = "$($XSHost.license_server["port"])"; }
 		}
 		If($Text)
 		{
-			Line 3 "There are no Network Interfaces configured for Host $XSHostName"
+			Line 3 "Status`t`t`t`t`t: " "$licenseStatus"
+			Line 3 "License`t`t`t`t`t: " "$($XSHost.license_params["sku_marketing_name"])"
+			Line 3 "Number of Sockets`t`t: " $($XSHost.license_params["sockets"])
+			Line 3 "License Server Address`t: " "$($XSHost.license_server["address"])"
+			Line 3 "License Server Port`t`t: " "$($XSHost.license_server["port"])"
+		}
+		If($HTML)
+		{
+			$columnHeaders = @("Status",($htmlsilver -bor $htmlbold),$licenseStatus,$htmlwhite)
+			$rowdata += @(,("License",($htmlsilver -bor $htmlbold),$($XSHost.license_params["sku_marketing_name"]),$htmlwhite))
+			$rowdata += @(,("Number of Sockets",($htmlsilver -bor $htmlbold),"$($XSHost.license_params["sockets"])",$htmlwhite))
+			$rowdata += @(,("License Server Address",($htmlsilver -bor $htmlbold),$($XSHost.license_server["address"]),$htmlwhite))
+			$rowdata += @(,("License Server Port",($htmlsilver -bor $htmlbold),"$($XSHost.license_server["port"])",$htmlwhite))
+		}
+	If($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+		-Columns Data,Value `
+		-List `
+		-Format $wdTableGrid `
+		-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 175;
+		$Table.Columns.Item(2).Width = 175;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("175","175")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+
+}
+
+Function OutputHostVersion
+{
+Param([object]$XSHost)
+Write-Verbose "$(Get-Date -Format G): `tOutput Host Version Details"
+
+If($MSWord -or $PDF)
+{
+	WriteWordLine 3 0 "Version Details"
+}
+If($Text)
+{
+	Line 2 "Version Details"
+}
+If($HTML)
+{
+	WriteHTMLLine 3 0 "Version Details"
+}
+
+If($MSWord -or $PDF)
+{
+	[System.Collections.Hashtable[]] $ScriptInformation = @()
+
+}
+If($Text)
+{
+}
+If($HTML)
+{
+	$rowdata = @()
+}
+
+If($MSWord -or $PDF)
+{
+	$ScriptInformation += @{ Data = "Build date"; Value = "$($XSHost.software_version["date"])"; }
+	$ScriptInformation += @{ Data = "Version"; Value = "$($XSHost.software_version["product_version_text"])"; }
+	$ScriptInformation += @{ Data = "DBV"; Value = "$($XSHost.software_version["dbv"])"; }
+}
+If($Text)
+{
+	Line 3 "Build date`t: " "$($XSHost.software_version["date"])"
+	Line 3 "Version`t`t: " "$($XSHost.software_version["product_version_text"])"
+	Line 3 "DBV`t`t`t: " "$($XSHost.software_version["dbv"])"
+}
+If($HTML)
+{
+	$columnHeaders = @("Build date",($htmlsilver -bor $htmlbold),"$($XSHost.software_version["date"])",$htmlwhite)
+	$rowdata += @(,("Version",($htmlsilver -bor $htmlbold),$($XSHost.software_version["product_version_text"]),$htmlwhite))
+	$rowdata += @(,("DBV",($htmlsilver -bor $htmlbold),"$($XSHost.software_version["dbv"])",$htmlwhite))
+}
+If($MSWord -or $PDF)
+{
+	$Table = AddWordTable -Hashtable $ScriptInformation `
+	-Columns Data,Value `
+	-List `
+	-Format $wdTableGrid `
+	-AutoFit $wdAutoFitFixed;
+
+	## IB - Set the header row format
+	SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+	$Table.Columns.Item(1).Width = 100;
+	$Table.Columns.Item(2).Width = 150;
+
+	$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+	FindWordDocumentEnd
+	$Table = $Null
+	WriteWordLine 0 0 ""
+}
+If($Text)
+{
+	Line 0 ""
+}
+If($HTML)
+{
+	$msg = ""
+	$columnWidths = @("100","150")
+	FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+	WriteHTMLLine 0 0 ""
+}
+
+}
+
+Function OutputHostManagement
+{
+	Param([object]$XSHost)
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host Management Interface"
+
+	$mPifs = $XSHost.PIFs | Get-XenPIF -EA 0 | Where-Object {$_.management}
+	$managementIPs = @()
+	ForEach ($pif in $mPifs) 
+	{
+		If ($pif.IP) 
+		{
+			$managementIPs += "$($pif.IP)"
+		}
+		ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+		{
+			$managementIPs += "DHCP"
+		}
+		Else 
+		{
+			$managementIPs += "Unknown"
+		}
+	} 
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Management Interface"
+	}
+	If($Text)
+	{
+		Line 2 "Management Interface"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "Management Interface"
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	
+	}
+	If($Text)
+	{
+	}
+	If($HTML)
+	{
+		$rowdata = @()
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		$ScriptInformation += @{ Data = "DNS hostname"; Value = "$($XSHost.hostname)"; }
+		$ScriptInformation += @{ Data = "Management interface"; Value = "$($managementIPs -join ", ")"; }
+	}
+	If($Text)
+	{
+		Line 3 "DNS hostname`t`t`t: " "$($XSHost.hostname)"
+		Line 3 "Management interface`t: " "$($managementIPs -join ", ")"
+	}
+	If($HTML)
+	{
+		$columnHeaders = @("DNS hostname",($htmlsilver -bor $htmlbold),"$($XSHost.hostname)",$htmlwhite)
+		$rowdata += @(,("Management interface",($htmlsilver -bor $htmlbold),$($managementIPs -join ", "),$htmlwhite))
+	}
+	If($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+		-Columns Data,Value `
+		-List `
+		-Format $wdTableGrid `
+		-AutoFit $wdAutoFitFixed;
+	
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+	
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 150;
+	
+		$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+	
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150","150")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+	
+}
+
+Function OutputHostMemory
+{
+	Param([object]$XSHost)
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host Memory"
+
+	$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
+	try
+	{
+		$memTotal = '{0:N1} GB' -f $($XSHostMetrics.memory_total / 1GB)
+	}
+	catch
+	{
+		$memTotal = '{0:N1} Bytes' -f $XSHostMetrics.memory_total
+	}
+	try
+	{
+		$memFree = '{0:N1} GB' -f $($XSHostMetrics.memory_free / 1GB)
+	}
+	catch
+	{
+		$memFree = '{0:N1} Bytes' -f $XSHostMetrics.memory_free
+	}
+
+	$memoryText = "$memFree RAM available ($memTotal)"
+	$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM )
+	$hostRunningVMs = @($hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $false -and $_.power_state -like "running"})
+	$dom0VM = $hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $true}
+	$vmText = @()
+	$vmMemoryUsed = [Int64]0
+	ForEach ($vm in $hostRunningVMs) {
+		$vmText += '{0}: using {1:N1} GB' -f $vm.name_label, $($vm.memory_target / 1GB)
+		$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
+	}
+
+	$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
+	try
+	{
+		$memXS = '{0:N1} GB' -f $($memXSNum / 1GB)
+	}
+	catch
+	{
+		$memXS = '{0:N1} Bytes' -f $($dom0VM.memory_target + $XSHost.memory_overhead)
+	}
+	$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
+	$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
+	try
+	{
+		$memXSUsed = '{0:N1} GB' -f $($memXSUsedNum / 1GB)
+		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
+	}
+	catch
+	{
+		$memXSUsed = '{0:N1} Bytes' -f $memXSUsedNum
+		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
+	}
+	try
+	{
+		$memXSAvailable = '{0:N1} GB' -f $($memXSAvailableNum / 1GB)
+	}
+	catch
+	{
+		$memXSAvailable = '{0:N1} Bytes' -f $memXSAvailableNum
+	}
+
+	try {
+		$cdMemory = '{0:N1} GB' -f $($dom0VM.memory_target / 1GB)
+	} catch {
+		$cdMemory = "$($dom0VM.memory_target) Bytes"
+	}
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Memory"
+	}
+	If($Text)
+	{
+		Line 2 "Memory"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "Memory"
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	
+	}
+	If($Text)
+	{
+	}
+	If($HTML)
+	{
+		$rowdata = @()
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		$ScriptInformation += @{ Data = "Server"; Value = "$($memoryText)"; }
+		$ScriptInformation += @{ Data = "VMs"; Value = "$($hostRunningVMs.Count)"; }
+		$vmText | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
+		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($memXS)"; }
+		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($cdMemory)"; }
+		$ScriptInformation += @{ Data = "Available memory"; Value = "$($memXSAvailable)"; }
+		$ScriptInformation += @{ Data = "Total max memory"; Value = "$($memXSUsed) ($memXSUsedPct of total memory)"; }
+	}
+	If($Text)
+	{
+		Line 3 "Server`t`t`t`t`t: " "$($memoryText)"
+		Line 3 "VMs`t`t`t`t`t`t: " "$($hostRunningVMs.Count)"
+		$vmText | ForEach-Object { Line 9 "  $($_)" }
+		Line 3 "Citrix Hypervisor`t`t: " "$($memXS)"
+		Line 3 "Control domain memory`t: " "$($cdMemory)"
+		Line 3 "Available memory`t`t: " "$($memXSAvailable)"
+		Line 3 "Total max memory`t`t: " "$($memXSUsed) ($memXSUsedPct of total memory)"
+	}
+	If($HTML)
+	{
+		$columnHeaders = @("Server",($htmlsilver -bor $htmlbold),"$($memoryText)",$htmlwhite)
+		$rowdata += @(,("VMs",($htmlsilver -bor $htmlbold),"$($hostRunningVMs.Count)",$htmlwhite))
+		$vmText | ForEach-Object { $rowdata += @(,("",($htmlsilver -bor $htmlbold),"$($_)",$htmlwhite)) }
+		$rowdata += @(,("Citrix Hypervisor",($htmlsilver -bor $htmlbold),"$($memXS)",$htmlwhite))
+		$rowdata += @(,("Control domain memory",($htmlsilver -bor $htmlbold),"$($cdMemory)",$htmlwhite))
+		$rowdata += @(,("Available memory",($htmlsilver -bor $htmlbold),"$($memXSAvailable)",$htmlwhite))
+		$rowdata += @(,("Total max memory",($htmlsilver -bor $htmlbold),"$($memXSUsed) ($memXSUsedPct of total memory)",$htmlwhite))
+	}
+	If($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+		-Columns Data,Value `
+		-List `
+		-Format $wdTableGrid `
+		-AutoFit $wdAutoFitFixed;
+	
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+	
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 200;
+	
+		$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+	
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150","200")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+		
+}
+
+Function OutputHostCPUs
+{
+	Param([object]$XSHost)
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host CPUs"
+
+	$hostCPUCount = 'CPU 0 - {0}' -f $($XSHost.cpu_info["cpu_count"] -1)
+	$hostCPUInfo = @()
+	$hostCPUInfo += 'Vendor: {0}' -f $XSHost.cpu_info["vendor"]
+	$hostCPUInfo += 'Model: {0}' -f $XSHost.cpu_info["modelname"]
+	$hostCPUInfo += 'Speed: {0} MHz' -f [math]::Round($XSHost.cpu_info["speed"])
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "CPUs"
+	}
+	If($Text)
+	{
+		Line 2 "CPUs"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "CPUs"
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	}
+	If($Text)
+	{
+	}
+	If($HTML)
+	{
+		$rowdata = @()
+	}
+	
+	If($MSWord -or $PDF)
+	{
+		$ScriptInformation += @{ Data = "$hostCPUCount"; Value = "$($hostCPUInfo[0])"; }
+		$ScriptInformation += @{ Data = ""; Value = "$($hostCPUInfo[1])"; }
+		$ScriptInformation += @{ Data = ""; Value = "$($hostCPUInfo[2])"; }
+	}
+	If($Text)
+	{
+		Line 3 "$hostCPUCount`t: "
+		$hostCPUInfo | ForEach-Object { Line 4 "$($_)" }
+	}
+	If($HTML)
+	{
+		$columnHeaders = @("$hostCPUCount",($htmlsilver -bor $htmlbold),"$($hostCPUInfo -join "<br>")",$htmlwhite)
+	}
+	If($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+		-Columns Data,Value `
+		-List `
+		-Format $wdTableGrid `
+		-AutoFit $wdAutoFitFixed;
+	
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+	
+		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(2).Width = 300;
+	
+		$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+	
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If($Text)
+	{
+		Line 0 ""
+	}
+	If($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("100","300")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+		
+}
+
+Function OutputHostNetworking
+{
+	Param([object]$XSHost)
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host Networking"
+
+	$XSHostName = $XSHost.Name_Label
+	$XSNetworks = @(Get-XenNetwork | Where-Object {$_.other_config["is_host_internal_management_network"] -notlike $true})
+	$networks = @()
+	$nrNICs = $XSNetworks.Count
+	If($nrNICs -ge 1)
+	{
+		ForEach($Item in $XSNetworks) {
+			$pif = $Item.PIFs | Get-XenPIF | Where-Object {$XSHost.opaque_ref -in $_.host}
+			if ([String]::IsNullOrEmpty($pif)) {
+				$nic = ""
+				$vlan = ""
+				$autoAssign = "No"
+				$linkStatus = "<None>"
+				$mac = "-"
+			} else {
+				$nic = $pif.device.Replace("eth","NIC ")
+				
+				If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0)) {
+					$vlan = "-"
+					$mac = $pif.MAC
+				} Else {
+					$vlan = "$($pif.VLAN)"
+					$mac = "-"
+				}
+				if ($Item.other_config["automatic"] -like $true) {
+					$autoAssign = "Yes"
+				} else {
+					$autoAssign = "No"
+				}
+				
+				$pifMetrics = $pif.metrics | Get-XenPIFMetrics
+				if ($pifMetrics.carrier -like $true) {
+					$linkStatus = "Connected"
+				} else {
+					$linkStatus = "Disconnected"
+				}
+		    }
+			$networks += $Item | Select-Object -Property `
+			@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth","Network ") }},
+			@{Name = 'Description'; Expression = { $_.name_description }},
+			@{Name = 'NIC'; Expression = { $nic }},
+			@{Name = 'VLAN'; Expression = { $vlan }},
+			@{Name = 'Auto'; Expression = { $autoAssign }},
+			@{Name = 'LinkStatus'; Expression = { $linkStatus }},
+			@{Name = 'MAC'; Expression = { $mac }},
+			@{Name = 'MTU'; Expression = { $item.MTU }}
+		}
+
+	}
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Networking"
+	}
+	If($Text)
+	{
+		Line 2 "Networking"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "Networking"
+	}
+
+	If($nrNICs -lt 1)
+	{
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no networks configured for Host $XSHostName"
+		}
+		If($Text)
+		{
+			Line 3 "There are no Network networks configured for Host $XSHostName"
 			Line 0 ""
 		}
 		If($HTML)
 		{
-			WriteHTMLLine 0 1 "There are no Network Interfaces configured for Host $XSHostName"
+			WriteHTMLLine 0 1 "There are no networks configured for Host $XSHostName"
 		}
 	}
 	Else
 	{
-		
 		If($MSWord -or $PDF)
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
-			$ScriptInformation += @{ Data = "Number of interfaces"; Value = "$nrPIFs"; }
+			$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrPIFs"; }
 		}
 		If($Text)
 		{
-			Line 3 "Number of interfaces`t: " "$nrPIFs"
+			Line 3 "Number of networks`t: " "$nrPIFs"
 		}
 		If($HTML)
 		{
-			$columnHeaders = @("Number of interfaces",($htmlsilver -bor $htmlbold),"$nrPIFs",$htmlwhite)
+			$columnHeaders = @("Number of networks",($htmlsilver -bor $htmlbold),"$nrPIFs",$htmlwhite)
 			$rowdata = @()
 		}
 
-		ForEach($Item in $XSPIFs)
+		ForEach($Item in $networks)
 		{
-			If ([String]::IsNullOrEmpty($($item.management))) {
-				$managementNIC = "False"
-			} Else {
-				$managementNIC = $item.management
-			}
-
-			If ([String]::IsNullOrEmpty($($item.physical))) {
-				$physicalNIC = "False"
-			} Else {
-				$physicalNIC = $item.physical
-			}
-			
 			If($MSWord -or $PDF)
 			{
-				$ScriptInformation += @{ Data = "Device"; Value = $($item.device); }
-				$ScriptInformation += @{ Data = "  Management interface"; Value = "$($managementNIC)"; }
+				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+				$ScriptInformation += @{ Data = "  Description"; Value = $($item.Description); }
+				$ScriptInformation += @{ Data = "  NIC"; Value = $($item.NIC); }
+				$ScriptInformation += @{ Data = "  VLAN"; Value = $($item.VLAN); }
+				$ScriptInformation += @{ Data = "  Auto"; Value = $($item.Auto); }
+				$ScriptInformation += @{ Data = "  Link Status"; Value = $($item.LinkStatus); }
 				$ScriptInformation += @{ Data = "  MAC"; Value = $($item.MAC); }
-				$ScriptInformation += @{ Data = "  Physical"; Value = "$($physicalNIC)"; }
-				If (-Not [String]::IsNullOrEmpty($($item.VLAN)) -and $item.VLAN -gt 0) {
-					$ScriptInformation += @{ Data = "  VLAN"; Value = $($item.VLAN); }
-				}
 				$ScriptInformation += @{ Data = "  MTU"; Value = $($item.MTU); }
 			}
 			If($Text)
 			{
-				Line 3 "Device`t`t`t: " $($item.device)
-				Line 3 "Management interface`t: " "$($managementNIC)"
-				Line 3 "MAC`t`t`t: " $($item.MAC)
-				Line 3 "Physical`t`t: " "$($physicalNIC)"
-				If (-Not [String]::IsNullOrEmpty($($item.VLAN)) -and $item.VLAN -gt 0) {
-				    Line 3 "VLAN`t`t`t: " $($item.VLAN)
-				}
-				Line 3 "MTU`t`t`t: " $($item.MTU)
+				Line 3 "Name`t`t`t`t`t: " $($item.Name)
+				Line 3 "Description`t`t`t`t: " $($item.Description)
+				Line 3 "NIC`t`t`t`t`t`t: " $($item.NIC)
+				Line 3 "VLAN`t`t`t`t`t: " $($item.VLAN)
+				Line 3 "Auto`t`t`t`t`t: " $($item.Auto)
+				Line 3 "Link Status`t`t`t`t: " $($item.LinkStatus)
+				Line 3 "MAC`t`t`t`t`t`t: " $($item.MAC)
+				Line 3 "MTU`t`t`t`t`t`t: " $($item.MTU)
 			}
 			If($HTML)
 			{
-				$rowdata += @(,("Device",($htmlsilver -bor $htmlbold),$($item.device),($htmlsilver -bor $htmlbold)))
-				$rowdata += @(,("  vManagement interface",($htmlsilver -bor $htmlbold),"$($managementNIC)",$htmlwhite))
-				$rowdata += @(,("  MAC",($htmlsilver -bor $htmlbold),$($item.MAC),$htmlwhite))
-				$rowdata += @(,("  Physical",($htmlsilver -bor $htmlbold),"$($physicalNIC)",$htmlwhite))
-				If (-Not [String]::IsNullOrEmpty($($item.VLAN)) -and $item.VLAN -gt 0) {
-					$rowdata += @(,("  VLAN",($htmlsilver -bor $htmlbold),$($item.VLAN),$htmlwhite))
-				}
-				$rowdata += @(,("  MTU",($htmlsilver -bor $htmlbold),$($item.MTU),$htmlwhite))
+				$rowdata += @(,("Name",($htmlsilver -bor $htmlbold),$($item.Name),($htmlsilver -bor $htmlbold)))
+				$rowdata += @(,("Description",($htmlsilver -bor $htmlbold),$($item.Description),$htmlwhite))
+				$rowdata += @(,("NIC",($htmlsilver -bor $htmlbold),$($item.NIC),$htmlwhite))
+				$rowdata += @(,("VLAN",($htmlsilver -bor $htmlbold),$($item.VLAN),$htmlwhite))
+				$rowdata += @(,("Auto",($htmlsilver -bor $htmlbold),$($item.Auto),$htmlwhite))
+				$rowdata += @(,("Link Status",($htmlsilver -bor $htmlbold),$($item.LinkStatus),$htmlwhite))
+				$rowdata += @(,("MAC",($htmlsilver -bor $htmlbold),$($item.MAC),$htmlwhite))
+				$rowdata += @(,("MTU",($htmlsilver -bor $htmlbold),$($item.MTU),$htmlwhite))
 			}
 		}
 		
@@ -6203,6 +6827,187 @@ Function OutputHostPIF
 			WriteHTMLLine 0 0 ""
 		}
 	}
+}
+
+Function OutputHostNICs
+{
+	Param([object]$XSHost)
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host NICs"
+
+	$XSNICSs = @($XSHost.PIFs | Get-XenPIF | Where-Object {$_.physical -like $true -or -Not [String]::IsNullOrEmpty($_.bond_master_of)} | Sort-Object -Property device)
+	$XSHostName = $XSHost.Name_Label
+	$nrNICSs = $XSNICSs.Count
+	$nics=@()
+	If($nrNICSs -ge 1)
+	{
+		ForEach($Item in $XSNICSs)
+		{
+			$pifMetrics = $item.metrics | Get-XenPIFMetrics
+			<#
+			if (-Not [String]::IsNullOrEmpty($Item.bond_master_of)) {
+				$nicBond = $Item.bond_master_of | Get-XenBond
+				$nicSlaves = $XSNICSs | Where-Object { $_.opaque_ref -in $nicBond.slaves}
+			}
+			#>
+			if ($pifMetrics.carrier -like $true) {
+				$linkStatus = "Connected"
+				If ([String]::IsNullOrEmpty($($item.duplex)) -or $item.duplex -like $false) {
+					$nicDuplex = "Full"
+				} Else {
+					$nicDuplex = "Half"
+				}
+				If ($pifMetrics.speed -gt 0) {
+					$nicSpeed = '{0} Mbit/s' -f $pifMetrics.speed
+				} Else {
+					$nicSpeed = "-"
+				}
+			} else {
+				$linkStatus = "Disconnected"
+				$nicDuplex = "-"
+				$nicSpeed = "-"
+			}
+
+			$nics += $Item | Select-Object -Property `
+			@{Name = 'Name'; Expression = { $_.device.Replace("eth","NIC ") }},
+			MAC,
+			@{Name = 'LinkStatus'; Expression = { $linkStatus }},
+			@{Name = 'Speed'; Expression = { $nicSpeed }},
+			@{Name = 'Duplex'; Expression = { $nicDuplex }},
+			@{Name = 'Vendor'; Expression = { "$($pifMetrics.vendor_name)" }},
+			@{Name = 'Device'; Expression = { "$($pifMetrics.device_name)" }},
+			@{Name = 'PCIBusPath'; Expression = { "$($pifMetrics.pci_bus_path)" }},
+			@{Name = 'FCoE'; Expression = { ""; <#UNDEFINED#> }},
+			@{Name = 'SRIOV'; Expression = { ""; <#UNDEFINED#> }}
+		}
+	}
+
+
+
+
+	If($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "NICs"
+	}
+	If($Text)
+	{
+		Line 2 "NICs"
+	}
+	If($HTML)
+	{
+		WriteHTMLLine 3 0 "NICs"
+	}
+
+	If($nrNICSs -lt 1)
+	{
+
+		If($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no NICs configured for Host $XSHostName"
+		}
+		If($Text)
+		{
+			Line 3 "There are no Network NICs configured for Host $XSHostName"
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no NICs configured for Host $XSHostName"
+		}
+	}
+	Else
+	{
+		
+		If($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Number of NICs"; Value = "$nrNICSs"; }
+		}
+		If($Text)
+		{
+			Line 3 "Number of NICs`t: " "$nrNICSs"
+		}
+		If($HTML)
+		{
+			$columnHeaders = @("Number of NICs",($htmlsilver -bor $htmlbold),"$nrNICSs",$htmlwhite)
+			$rowdata = @()
+		}
+
+		ForEach($Item in $nics)
+		{
+			If($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "NIC"; Value = $($Item.Name); }
+				$ScriptInformation += @{ Data = "  MAC"; Value = $($item.MAC); }
+				$ScriptInformation += @{ Data = "  Link Status"; Value = $($item.LinkStatus); }
+				$ScriptInformation += @{ Data = "  Speed"; Value = $($item.Speed); }
+				$ScriptInformation += @{ Data = "  Duplex"; Value = $($item.Duplex); }
+				$ScriptInformation += @{ Data = "  Vendor"; Value = $($item.Vendor); }
+				$ScriptInformation += @{ Data = "  Device"; Value = $($item.Device); }
+				$ScriptInformation += @{ Data = "  PCI Bus Path"; Value = $($item.PCIBusPath); }
+				$ScriptInformation += @{ Data = "  FCoE Capable"; Value = $($item.FCoE); }
+				$ScriptInformation += @{ Data = "  SR-IOV Capable"; Value = $($item.SRIOV); }
+			}
+			If($Text)
+			{
+				Line 3 "NIC`t`t`t`t`t: " $($Item.Name)
+				Line 3 "MAC`t`t`t`t: " $($item.MAC)
+				Line 3 "Link Status`t`t`t: " $($item.LinkStatus)
+				Line 3 "Speed`t`t`t: " $($item.Speed)
+				Line 3 "Duplex`t`t`t: " $($item.Duplex)
+				Line 3 "Vendor`t`t`t: " $($item.Vendor)
+				Line 3 "Device`t`t`t: " $($item.Device)
+				Line 3 "PCI Bus Path`t: " $($item.PCIBusPath)
+				Line 3 "FCoE Capable`t: " $($item.FCoE)
+				Line 3 "SR-IOV Capable`t: " $($item.SRIOV)
+			}
+			If($HTML)
+			{
+				$rowdata += @(,("NIC",($htmlsilver -bor $htmlbold),$($Item.Name),($htmlsilver -bor $htmlbold)))
+				$rowdata += @(,("  MAC",($htmlsilver -bor $htmlbold),$($item.MAC),$htmlwhite))
+				$rowdata += @(,("  Link Status",($htmlsilver -bor $htmlbold),$($item.LinkStatus),$htmlwhite))
+				$rowdata += @(,("  Speed",($htmlsilver -bor $htmlbold),$($item.Speed),$htmlwhite))
+				$rowdata += @(,("  Duplex",($htmlsilver -bor $htmlbold),$($item.Duplex),$htmlwhite))
+				$rowdata += @(,("  Vendor",($htmlsilver -bor $htmlbold),$($item.Vendor),$htmlwhite))
+				$rowdata += @(,("  Device",($htmlsilver -bor $htmlbold),$($item.Device),$htmlwhite))
+				$rowdata += @(,("  PCI Bus Path",($htmlsilver -bor $htmlbold),$($item.PCIBusPath),$htmlwhite))
+				$rowdata += @(,("  FCoE Capable",($htmlsilver -bor $htmlbold),$($item.FCoE),$htmlwhite))
+				$rowdata += @(,("  SR-IOV Capable",($htmlsilver -bor $htmlbold),$($item.SRIOV),$htmlwhite))
+			}
+		}
+		
+		If($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data,Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(2).Width = 400;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If($Text)
+		{
+			Line 0 ""
+		}
+		If($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("200","400")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+
 }
 
 Function OutputHostGPU
@@ -6252,7 +7057,7 @@ Function OutputHostGPU
 		}
 		If($Text)
 		{
-			Line 3 "Number of GPU's Installed`t: " "$nrGPUs"
+			Line 3 "Number of GPU's Installed`t`t: " "$nrGPUs"
 		}
 		If($HTML)
 		{
@@ -6297,25 +7102,28 @@ Function OutputHostGPU
 			
 			If($MSWord -or $PDF)
 			{
+				$ScriptInformation += @{ Data = ""; Value = ""; }
 				$ScriptInformation += @{ Data = "Name"; Value = $($gpuGroup.name_label); }
-				$ScriptInformation += @{ Data = "  vGPU allocation"; Value = $($allocation); }
-				$ScriptInformation += @{ Data = "  Primary host display adapter"; Value = $($primaryAdapter); }
-				$ScriptInformation += @{ Data = "  vGPU Pofiles"; Value = $($gpuTypesText); }
+				$ScriptInformation += @{ Data = "vGPU allocation"; Value = $($allocation); }
+				$ScriptInformation += @{ Data = "Primary host display adapter"; Value = $($primaryAdapter); }
+				$ScriptInformation += @{ Data = "vGPU Pofiles"; Value = $($gpuTypesText); }
 
 			}
 			If($Text)
 			{
-				Line 3 "Name`t`t`t`t: " $($gpuGroup.name_label)
-				Line 3 "vGPU allocation`t`t`t: " $($allocation)
+				Line 3 "" ""
+				Line 3 "Name`t`t`t`t`t`t`t: " $($gpuGroup.name_label)
+				Line 3 "vGPU allocation`t`t`t`t`t: " $($allocation)
 				Line 3 "Primary host display adapter`t: " $($primaryAdapter)
-				Line 3 "vGPU profiles`t`t`t: " $($gpuTypesText)
+				Line 3 "vGPU profiles`t`t`t`t`t: " $($gpuTypesText)
 			}
 			If($HTML)
 			{
-				$rowdata += @(,("Name",($htmlsilver -bor $htmlbold),$($gpuGroup.name_label),($htmlsilver -bor $htmlbold)))
-				$rowdata += @(,("  vGPU allocation",($htmlsilver -bor $htmlbold),$($allocation),$htmlwhite))
-				$rowdata += @(,("  Primary host display adapter",($htmlsilver -bor $htmlbold),$($primaryAdapter),$htmlwhite))
-				$rowdata += @(,("  vGPU profiles",($htmlsilver -bor $htmlbold),$($gpuTypesText.Replace("`r`n","<br>")),$htmlwhite))
+				$rowdata += @(,("",($htmlsilver -bor $htmlbold),"",($htmlsilver -bor $htmlbold)))
+				$rowdata += @(,("Name",($htmlsilver -bor $htmlbold),$($gpuGroup.name_label),$htmlwhite))
+				$rowdata += @(,("vGPU allocation",($htmlsilver -bor $htmlbold),$($allocation),$htmlwhite))
+				$rowdata += @(,("Primary host display adapter",($htmlsilver -bor $htmlbold),$($primaryAdapter),$htmlwhite))
+				$rowdata += @(,("vGPU profiles",($htmlsilver -bor $htmlbold),$($gpuTypesText.Replace("`r`n","<br>")),$htmlwhite))
 			}
 		}
 		
@@ -6377,12 +7185,12 @@ Function ProcessVMs
 	ForEach($VMName in $Script:VMNames)
 	{
 		$VM = Get-XenVM -Name $VMName.name_label
-		$VMOSName = ($VM.guest_metrics | Get-XenVMGuestMetrics).os_version.name
+		$VMOSName = $(try { ($VM.guest_metrics | Get-XenVMGuestMetrics).os_version.name } catch { "N/A" })
 		If(!$?)
 		{
 			$VMOSName = "N/A"
 		}
-		$VMHost = ($VM.resident_on | Get-XenHost).name_label
+		$VMHost = $(try {($VM.resident_on | Get-XenHost).name_label } catch {"N/A"})
 		If(!$?)
 		{
 			If($VM.power_state -ne "Running")
@@ -6396,7 +7204,7 @@ Function ProcessVMs
 		}
 		OutputVM $VM $VMOSName $VMHost
         #AddedJB =>
-		OutputVMNIC $VM $XenNetwork
+		OutputVMNIC $VM
 		OutputVMGPU $VM
 		#AddedJB <=
 		OutputVMCustomFields $VM
@@ -6526,11 +7334,11 @@ Function OutputVM
         	Line 2 "Minimum Memory`t`t: " $xenVmMemMin
         	Line 2 "Maximum Memory`t`t: " $xenVmMemMax
         } Else {
-        	Line 2 "Memory`t`t`t: " $xenVmMem
+        	Line 2 "Memory`t`t`t`t: " $xenVmMem
         }
-		Line 2 "Boot order`t`t: " $($bootorder -join ", ")
-		Line 2 "Boot mode`t`t: " $VM.HVM_boot_params["firmware"].ToUpper()
-		Line 2 "Secure boot`t`t: " $xenVMSecureBoot
+		Line 2 "Boot order`t`t`t: " $($bootorder -join ", ")
+		Line 2 "Boot mode`t`t`t: " $VM.HVM_boot_params["firmware"].ToUpper()
+		Line 2 "Secure boot`t`t`t: " $xenVMSecureBoot
 
 		#AddedJB <=
 
@@ -6695,7 +7503,7 @@ Function OutputVMGPU
 
 Function OutputVMNIC
 {
-	Param([object] $VM, [Object]$XenNetwork)
+	Param([object] $VM)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Network"
 
 	$xenVMVIFs = @($vm.VIFs | Get-XenVIF)
@@ -6711,9 +7519,14 @@ Function OutputVMNIC
 		$xenVMNic += @{ Data = "NetworkNameLabel"; Value =$($network.name_label)}
 		try {
 		    $pif = $network.PIFs | Get-XenPIF | Where-Object {$_.host -eq $vm.scheduled_to_be_resident_on  -or $_.host -eq $vm.resident_on }
-		    $xenVMNic += @{ Data = "NetworkVLAN"; Value =$($pif.VLAN)}
+			if ($null -ne $pif -and $null -ne $pif.VLAN -and $pif.VLAN -ge 0) {
+				$xenVMNic += @{ Data = "NetworkVLAN"; Value =$($pif.VLAN)}
+			} else {
+				$xenVMNic += @{ Data = "NetworkVLAN"; Value ="-"}
+			}
+		    
 		} catch {
-			$xenVMNic += @{ Data = "NetworkVLAN"; Value =""}
+			$xenVMNic += @{ Data = "NetworkVLAN"; Value ="-"}
 		}
 	}
 
@@ -6771,58 +7584,51 @@ Function OutputVMNIC
 			$network = $vif.network | Get-XenNetwork -ErrorAction SilentlyContinue
 			try {
 				$pif = $network.PIFs | Get-XenPIF | Where-Object {$_.host -eq $vm.scheduled_to_be_resident_on  -or $_.host -eq $vm.resident_on }
-				$vlan = $pif.VLAN
+				If ($null -ne $pif -and $null -ne $pif.VLAN -and $pif.VLAN -ge 0) {
+					$vlan = $pif.VLAN
+				} 
+				Else
+				{
+					$vlan = $null
+				}
 			} catch {
 				$vlan = $null
 			}
 
 			If($MSWord -or $PDF)
 			{
-				$ScriptInformation += @{ Data = "Device"; Value = $($Item.device); }
-				$ScriptInformation += @{ Data = "MAC address"; Value = $($Item.MAC); }
-				$ScriptInformation += @{ Data = "MAC autogenerated"; Value = $($Item.MAC_autogenerated); }
-				$ScriptInformation += @{ Data = "MTU size"; Value = $($Item.MTU); }
+				$ScriptInformation += @{ Data = "Device"; Value = "$($Item.device)"; }
+				$ScriptInformation += @{ Data = "MAC address"; Value = "$($Item.MAC)"; }
+				$ScriptInformation += @{ Data = "MAC autogenerated"; Value = "$($Item.MAC_autogenerated)"; }
+				$ScriptInformation += @{ Data = "MTU size"; Value = "$($Item.MTU)"; }
 				If (-Not [String]::IsNullOrEmpty($($network.name_label))) {
-					$ScriptInformation += @{ Data = "Network name"; Value = $($network.name_label); }
+					$ScriptInformation += @{ Data = "Network name"; Value = "$($network.name_label)"; }
 				}
-				If (-Not [String]::IsNullOrEmpty($vlan)) {
-					$ScriptInformation += @{ Data = "Network VLAN"; Value = $($vlan); }
+				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0) {
+					$ScriptInformation += @{ Data = "Network VLAN"; Value = "$($vlan)"; }
 				}
 			}
 			If($Text)
 			{
-				Line 3 "Device`t`t: " $($Item.device)
-				Line 3 "MAC address`t`t: " $($Item.MAC)
-				Line 3 "MAC autogenerated`t: " $($Item.MAC_autogenerated)
-				Line 3 "MTU size`t`t: " $($Item.MTU)
-				Line 3 "Network name`t`t: " $($network.name_label)
-				If (-Not [String]::IsNullOrEmpty($vlan)) {
-					Line 3 "Network VLAN`t`t: " $($vlan)
-				}
-				
-
-
-				$ScriptInformation += @{ Data = "Device"; Value = $($Item.device); }
-				$ScriptInformation += @{ Data = "MAC address"; Value = $($Item.MAC); }
-				$ScriptInformation += @{ Data = "MAC autogenerated"; Value = $($Item.MAC_autogenerated); }
-				$ScriptInformation += @{ Data = "MTU size"; Value = $($Item.MTU); }
-				If (-Not [String]::IsNullOrEmpty($($network.name_label))) {
-					$ScriptInformation += @{ Data = "Network name"; Value = $($network.name_label); }
-				}
-				If (-Not [String]::IsNullOrEmpty($vlan)) {
-					$ScriptInformation += @{ Data = "Network VLAN"; Value = $($vlan); }
+				Line 3 "Device`t`t`t`t: " "$($Item.device)"
+				Line 3 "MAC address`t`t`t: " "$($Item.MAC)"
+				Line 3 "MAC autogenerated`t: " "$($Item.MAC_autogenerated)"
+				Line 3 "MTU size`t`t`t: " "$($Item.MTU)"
+				Line 3 "Network name`t`t: " "$($network.name_label)"
+				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0) {
+					Line 3 "Network VLAN`t`t: " "$($vlan)"
 				}
 			}
 			If($HTML)
 			{
-				$rowdata += @(,("Device",($htmlsilver -bor $htmlbold),$($Item.device),$htmlwhite))
-				$rowdata += @(,("MAC address",($htmlsilver -bor $htmlbold),$($Item.MAC),$htmlwhite))
-				$rowdata += @(,("MAC autogenerated",($htmlsilver -bor $htmlbold),$($Item.MAC_autogenerated),$htmlwhite))
-				$rowdata += @(,("MTU size",($htmlsilver -bor $htmlbold),$($Item.MTU),$htmlwhite))
+				$rowdata += @(,("Device",($htmlsilver -bor $htmlbold),"$($Item.device)",$htmlwhite))
+				$rowdata += @(,("MAC address",($htmlsilver -bor $htmlbold),"$($Item.MAC)",$htmlwhite))
+				$rowdata += @(,("MAC autogenerated",($htmlsilver -bor $htmlbold),"$($Item.MAC_autogenerated)",$htmlwhite))
+				$rowdata += @(,("MTU size",($htmlsilver -bor $htmlbold),"$($Item.MTU)",$htmlwhite))
 				If (-Not [String]::IsNullOrEmpty($($network.name_label))) {
-					$rowdata += @(,("Network name",($htmlsilver -bor $htmlbold),$($network.name_label),$htmlwhite))
+					$rowdata += @(,("Network name",($htmlsilver -bor $htmlbold),"$($network.name_label)",$htmlwhite))
 				}
-				If (-Not [String]::IsNullOrEmpty($vlan)) {
+				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0) {
 					$rowdata += @(,("Network VLAN",($htmlsilver -bor $htmlbold),$($vlan),$htmlwhite))
 				}
 			}
