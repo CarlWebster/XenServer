@@ -4363,7 +4363,7 @@ Function OutputPoolCustomFields
 		}
 		If($Text)
 		{
-			Line 3 "There are no Custom Fields for Pool $PoolName"
+			Line 2 "There are no Custom Fields for Pool $PoolName"
 			Line 0 ""
 		}
 		If($HTML)
@@ -4680,6 +4680,7 @@ Function OutputPoolEmailOptions
 		If($Text)
 		{
 			Line 2 "Send email alert notifications is disabled"
+			Line 0 ""
 		}
 		If($HTML)
 		{
@@ -6437,7 +6438,7 @@ Function OutputHostMemory
 	}
 
 	$memoryText = "$memFree RAM available ($memTotal)"
-	$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM )
+	$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM | Sort-Object -Property name_label)
 	$hostRunningVMs = @($hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $false -and $_.power_state -like "running"})
 	$dom0VM = $hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $true}
 	$vmText = @()
@@ -6578,11 +6579,18 @@ Function OutputHostCPUs
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `tOutput Host CPUs"
 
-	$hostCPUCount = 'CPU 0 - {0}' -f $($XSHost.cpu_info["cpu_count"] -1)
+	$hostCPUCount = '0 - {0}' -f $($XSHost.cpu_info["cpu_count"] -1)
 	$hostCPUInfo = @()
 	$hostCPUInfo += 'Vendor: {0}' -f $XSHost.cpu_info["vendor"]
 	$hostCPUInfo += 'Model: {0}' -f $XSHost.cpu_info["modelname"]
 	$hostCPUInfo += 'Speed: {0} MHz' -f [math]::Round($XSHost.cpu_info["speed"])
+
+	$hostVendor = $XSHost.cpu_info["vendor"]
+	$hostModel = $XSHost.cpu_info["modelname"]
+	$hostSpeed = '{0} MHz' -f [math]::Round($XSHost.cpu_info["speed"])
+
+
+
 	If($MSWord -or $PDF)
 	{
 		WriteWordLine 3 0 "CPUs"
@@ -6610,18 +6618,24 @@ Function OutputHostCPUs
 	
 	If($MSWord -or $PDF)
 	{
-		$ScriptInformation += @{ Data = "$hostCPUCount"; Value = "$($hostCPUInfo[0])"; }
-		$ScriptInformation += @{ Data = ""; Value = "$($hostCPUInfo[1])"; }
-		$ScriptInformation += @{ Data = ""; Value = "$($hostCPUInfo[2])"; }
+		$ScriptInformation += @{ Data = "CPU"; Value = "$($hostCPUCount)"; }
+		$ScriptInformation += @{ Data = "Vendor"; Value = "$($hostVendor)"; }
+		$ScriptInformation += @{ Data = "Model"; Value = "$($hostModel)"; }
+		$ScriptInformation += @{ Data = "Speed"; Value = "$($hostSpeed)"; }
 	}
 	If($Text)
 	{
-		Line 3 "$hostCPUCount`t: "
-		$hostCPUInfo | ForEach-Object { Line 4 "$($_)" }
+		Line 3 "CPU`t`t: " "$($hostCPUCount)"
+		Line 3 "Vendor`t: " "$($hostVendor)"
+		Line 3 "Model`t: " "$($hostModel)"
+		Line 3 "Speed`t: " "$($hostSpeed)"
 	}
 	If($HTML)
 	{
-		$columnHeaders = @("$hostCPUCount",($htmlsilver -bor $htmlbold),"$($hostCPUInfo -join "<br>")",$htmlwhite)
+		$columnHeaders = @("CPU",($htmlsilver -bor $htmlbold),"$($hostCPUCount)",$htmlwhite)
+		$rowdata += @(,("Vendor",($htmlsilver -bor $htmlbold),$($hostVendor),$htmlwhite))
+		$rowdata += @(,("Model",($htmlsilver -bor $htmlbold),$($hostModel),$htmlwhite))
+		$rowdata += @(,("Speed",($htmlsilver -bor $htmlbold),$($hostSpeed),$htmlwhite))
 	}
 	If($MSWord -or $PDF)
 	{
@@ -6634,8 +6648,8 @@ Function OutputHostCPUs
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 	
-		$Table.Columns.Item(1).Width = 100;
-		$Table.Columns.Item(2).Width = 300;
+		$Table.Columns.Item(1).Width = 75;
+		$Table.Columns.Item(2).Width = 200;
 	
 		$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
 	
@@ -6650,7 +6664,7 @@ Function OutputHostCPUs
 	If($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("100","300")
+		$columnWidths = @("75","300")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
@@ -6750,7 +6764,7 @@ Function OutputHostNetworking
 		}
 		If($Text)
 		{
-			Line 3 "Number of networks`t: " "$nrPIFs"
+			Line 3 "Number of networks`t`t: " "$nrPIFs"
 		}
 		If($HTML)
 		{
@@ -6924,7 +6938,7 @@ Function OutputHostNICs
 		}
 		If($Text)
 		{
-			Line 3 "Number of NICs`t: " "$nrNICSs"
+			Line 3 "Number of NICs`t`t: " "$nrNICSs"
 		}
 		If($HTML)
 		{
@@ -6950,15 +6964,15 @@ Function OutputHostNICs
 			If($Text)
 			{
 				Line 3 "NIC`t`t`t`t`t: " $($Item.Name)
-				Line 3 "MAC`t`t`t`t: " $($item.MAC)
-				Line 3 "Link Status`t`t`t: " $($item.LinkStatus)
-				Line 3 "Speed`t`t`t: " $($item.Speed)
-				Line 3 "Duplex`t`t`t: " $($item.Duplex)
-				Line 3 "Vendor`t`t`t: " $($item.Vendor)
-				Line 3 "Device`t`t`t: " $($item.Device)
-				Line 3 "PCI Bus Path`t: " $($item.PCIBusPath)
-				Line 3 "FCoE Capable`t: " $($item.FCoE)
-				Line 3 "SR-IOV Capable`t: " $($item.SRIOV)
+				Line 3 "  MAC`t`t`t`t: " $($item.MAC)
+				Line 3 "  Link Status`t`t: " $($item.LinkStatus)
+				Line 3 "  Speed`t`t`t`t: " $($item.Speed)
+				Line 3 "  Duplex`t`t`t: " $($item.Duplex)
+				Line 3 "  Vendor`t`t`t: " $($item.Vendor)
+				Line 3 "  Device`t`t`t: " $($item.Device)
+				Line 3 "  PCI Bus Path`t`t: " $($item.PCIBusPath)
+				Line 3 "  FCoE Capable`t`t: " $($item.FCoE)
+				Line 3 "  SR-IOV Capable`t: " $($item.SRIOV)
 			}
 			If($HTML)
 			{
@@ -6986,8 +7000,8 @@ Function OutputHostNICs
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
-			$Table.Columns.Item(2).Width = 400;
+			$Table.Columns.Item(1).Width = 175;
+			$Table.Columns.Item(2).Width = 250;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
 
@@ -7002,7 +7016,7 @@ Function OutputHostNICs
 		If($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("200","400")
+			$columnWidths = @("175","250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -7203,10 +7217,8 @@ Function ProcessVMs
 			}
 		}
 		OutputVM $VM $VMOSName $VMHost
-        #AddedJB =>
 		OutputVMNIC $VM
 		OutputVMGPU $VM
-		#AddedJB <=
 		OutputVMCustomFields $VM
 	}
 }
@@ -7227,7 +7239,6 @@ Function OutputVM
 		}
 	}
 
-	#AddedJB =>
 	If ($VM.memory_dynamic_max -ne $VM.memory_dynamic_min) {
 		$xenVMDynamicMemory = $true
 	} Else {
@@ -7276,8 +7287,6 @@ Function OutputVM
 		$xenVMSecureBoot = $VM.HVM_boot_params["secureboot"]
 	}
 
-	#AddedJB <=
-
 	If($MSWord -or $PDF)
 	{
 		WriteWordLine 2 0 "VM: $($VM.name_label)"
@@ -7287,9 +7296,7 @@ Function OutputVM
 		$ScriptInformation += @{ Data = "VM Operating System"; Value = $VMOSName; }
 		$ScriptInformation += @{ Data = "Number of vCPUs"; Value = $VCPUText; }
 
-		#AddedJB =>
-
-        If ($xenVMDynamicMemory) {
+		If ($xenVMDynamicMemory) {
         	$ScriptInformation += @{ Data = "Dynamic Memory"; Value = "True (DEPRECATED!)"; }
         	$ScriptInformation += @{ Data = "Minimum Memory"; Value = $xenVmMemMin; }
         	$ScriptInformation += @{ Data = "Maximum Memory"; Value = $xenVmMemMax; }
@@ -7300,8 +7307,6 @@ Function OutputVM
 		$ScriptInformation += @{ Data = "Boot mode"; Value = $VM.HVM_boot_params["firmware"].ToUpper(); }
 		$ScriptInformation += @{ Data = "Secure boot"; Value = $xenVMSecureBoot; }
 
-		#AddedJB <=
-		
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 		-Columns Data,Value `
 		-List `
@@ -7327,9 +7332,7 @@ Function OutputVM
 		Line 2 "VM Operating System`t: " $VMOSName
 		Line 2 "Number of vCPUs`t`t: " $VCPUText
 
-		#AddedJB =>
-
-        If ($xenVMDynamicMemory) {
+		If ($xenVMDynamicMemory) {
         	Line 2 "Dynamic Memory`t`t: " "True (DEPRECATED!)"
         	Line 2 "Minimum Memory`t`t: " $xenVmMemMin
         	Line 2 "Maximum Memory`t`t: " $xenVmMemMax
@@ -7339,8 +7342,6 @@ Function OutputVM
 		Line 2 "Boot order`t`t`t: " $($bootorder -join ", ")
 		Line 2 "Boot mode`t`t`t: " $VM.HVM_boot_params["firmware"].ToUpper()
 		Line 2 "Secure boot`t`t`t: " $xenVMSecureBoot
-
-		#AddedJB <=
 
 		Line 0 ""
 	}
@@ -7353,9 +7354,6 @@ Function OutputVM
 		$rowdata += @(,('VM Operating System',($htmlsilver -bor $htmlbold),$VMOSName,$htmlwhite))
 		$rowdata += @(,('Number of vCPUs',($htmlsilver -bor $htmlbold),$VCPUText,$htmlwhite))
 
-
-		#AddedJB =>
-
         If ($xenVMDynamicMemory) {
         	$rowdata += @(,('Dynamic Memory',($htmlsilver -bor $htmlbold),"True (DEPRECATED!)",$htmlwhite))
         	$rowdata += @(,('Minimum Memory',($htmlsilver -bor $htmlbold),$xenVmMemMin,$htmlwhite))
@@ -7366,8 +7364,6 @@ Function OutputVM
 		$rowdata += @(,('Boot order',($htmlsilver -bor $htmlbold),$($bootorder -join ", "),$htmlwhite))
 		$rowdata += @(,('Boot mode',($htmlsilver -bor $htmlbold),$VM.HVM_boot_params["firmware"].ToUpper(),$htmlwhite))
 		$rowdata += @(,('Secure boot',($htmlsilver -bor $htmlbold),$xenVMSecureBoot,$htmlwhite))
-
-		#AddedJB <=
 
 		$msg = ""
 		$columnWidths = @("200","250")
@@ -7499,8 +7495,6 @@ Function OutputVMGPU
 	}
 }
 
-#AddedJB =>
-
 Function OutputVMNIC
 {
 	Param([object] $VM)
@@ -7598,38 +7592,38 @@ Function OutputVMNIC
 			If($MSWord -or $PDF)
 			{
 				$ScriptInformation += @{ Data = "Device"; Value = "$($Item.device)"; }
-				$ScriptInformation += @{ Data = "MAC address"; Value = "$($Item.MAC)"; }
-				$ScriptInformation += @{ Data = "MAC autogenerated"; Value = "$($Item.MAC_autogenerated)"; }
-				$ScriptInformation += @{ Data = "MTU size"; Value = "$($Item.MTU)"; }
+				$ScriptInformation += @{ Data = "  MAC address"; Value = "$($Item.MAC)"; }
+				$ScriptInformation += @{ Data = "  MAC autogenerated"; Value = "$($Item.MAC_autogenerated)"; }
+				$ScriptInformation += @{ Data = "  MTU size"; Value = "$($Item.MTU)"; }
 				If (-Not [String]::IsNullOrEmpty($($network.name_label))) {
-					$ScriptInformation += @{ Data = "Network name"; Value = "$($network.name_label)"; }
+					$ScriptInformation += @{ Data = "  Network name"; Value = "$($network.name_label)"; }
 				}
 				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0) {
-					$ScriptInformation += @{ Data = "Network VLAN"; Value = "$($vlan)"; }
+					$ScriptInformation += @{ Data = "  Network VLAN"; Value = "$($vlan)"; }
 				}
 			}
 			If($Text)
 			{
 				Line 3 "Device`t`t`t`t: " "$($Item.device)"
-				Line 3 "MAC address`t`t`t: " "$($Item.MAC)"
-				Line 3 "MAC autogenerated`t: " "$($Item.MAC_autogenerated)"
-				Line 3 "MTU size`t`t`t: " "$($Item.MTU)"
-				Line 3 "Network name`t`t: " "$($network.name_label)"
+				Line 3 "  MAC address`t`t: " "$($Item.MAC)"
+				Line 3 "  MAC autogenerated`t: " "$($Item.MAC_autogenerated)"
+				Line 3 "  MTU size`t`t`t: " "$($Item.MTU)"
+				Line 3 "  Network name`t`t: " "$($network.name_label)"
 				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0) {
-					Line 3 "Network VLAN`t`t: " "$($vlan)"
+					Line 3 "  Network VLAN`t`t: " "$($vlan)"
 				}
 			}
 			If($HTML)
 			{
 				$rowdata += @(,("Device",($htmlsilver -bor $htmlbold),"$($Item.device)",$htmlwhite))
-				$rowdata += @(,("MAC address",($htmlsilver -bor $htmlbold),"$($Item.MAC)",$htmlwhite))
-				$rowdata += @(,("MAC autogenerated",($htmlsilver -bor $htmlbold),"$($Item.MAC_autogenerated)",$htmlwhite))
-				$rowdata += @(,("MTU size",($htmlsilver -bor $htmlbold),"$($Item.MTU)",$htmlwhite))
+				$rowdata += @(,("  MAC address",($htmlsilver -bor $htmlbold),"$($Item.MAC)",$htmlwhite))
+				$rowdata += @(,("  MAC autogenerated",($htmlsilver -bor $htmlbold),"$($Item.MAC_autogenerated)",$htmlwhite))
+				$rowdata += @(,("  MTU size",($htmlsilver -bor $htmlbold),"$($Item.MTU)",$htmlwhite))
 				If (-Not [String]::IsNullOrEmpty($($network.name_label))) {
-					$rowdata += @(,("Network name",($htmlsilver -bor $htmlbold),"$($network.name_label)",$htmlwhite))
+					$rowdata += @(,("  Network name",($htmlsilver -bor $htmlbold),"$($network.name_label)",$htmlwhite))
 				}
 				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0) {
-					$rowdata += @(,("Network VLAN",($htmlsilver -bor $htmlbold),$($vlan),$htmlwhite))
+					$rowdata += @(,("  Network VLAN",($htmlsilver -bor $htmlbold),$($vlan),$htmlwhite))
 				}
 			}
 		}
@@ -7645,7 +7639,7 @@ Function OutputVMNIC
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(1).Width = 175;
 			$Table.Columns.Item(2).Width = 250;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops,$wdAdjustProportional)
@@ -7661,13 +7655,12 @@ Function OutputVMNIC
 		If($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("200","250")
+			$columnWidths = @("175","250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
 	}
 }
-#AddedJB <=
 
 Function OutputVMCustomFields
 {
