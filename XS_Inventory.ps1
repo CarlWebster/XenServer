@@ -551,6 +551,7 @@ Param(
 #       OutputPoolGeneral
 #       OutputHostGeneral
 #	Added the following Functions:
+#       Get-CustomFields
 #		OutputHostNICs
 #		OutputHostNetworking
 #
@@ -737,7 +738,7 @@ If ($Folder -ne "")
 	If (Test-Path $Folder -EA 0)
 	{
 		#it exists, now check to see   If it is a folder and not a file
-		If (Test-Path $Folder -pathType Container -EA 0)
+		If (Test-Path $Folder -PathType Container -EA 0)
 		{
 			#it exists and it is a folder
 			Write-Verbose "$(Get-Date -Format G): Folder path $Folder exists and is a folder"
@@ -883,7 +884,7 @@ If (![String]::IsNullOrEmpty($To) -and [String]::IsNullOrEmpty($SmtpServer))
 #endregion
 
 #region initialize variables for Word, HTML, and text
-[string]$Script:RunningOS = (Get-WmiObject -class Win32_OperatingSystem -EA 0).Caption
+[string]$Script:RunningOS = (Get-WmiObject -Class Win32_OperatingSystem -EA 0).Caption
 
 If ($MSWord -or $PDF)
 {
@@ -1606,7 +1607,7 @@ Function SetupWord
 
 	# Setup word for output
 	Write-Verbose "$(Get-Date -Format G): Create Word comObject."
-	$Script:Word = New-Object -comobject "Word.Application" -EA 0 4>$Null
+	$Script:Word = New-Object -ComObject "Word.Application" -EA 0 4>$Null
 
 	#Do not indent the following write-error lines. Doing so will mess up the console formatting of the error message.
 	If (!$? -or $Null -eq $Script:Word)
@@ -2807,7 +2808,7 @@ Function SetupHTML
 	}
 
 	$htmlhead = "<html><head><meta http-equiv='Content-Language' content='da'><title>" + $Script:Title + "</title></head><body>"
-	out-file -FilePath $Script:HtmlFileName -Force -InputObject $HTMLHead 4>$Null
+	Out-File -FilePath $Script:HtmlFileName -Force -InputObject $HTMLHead 4>$Null
 }#endregion
 
 #region Iain's Word table functions
@@ -3667,13 +3668,13 @@ $Script:Title is attached.
 		{
 			Send-MailMessage -Attachments $emailAttachment -Body $emailBody -BodyAsHtml -From $From `
 				-Port $SmtpPort -SmtpServer $SmtpServer -Subject $emailSubject -To $To `
-				-UseSSL -credential $anonCredentials *>$Null 
+				-UseSsl -Credential $anonCredentials *>$Null 
 		}
 		Else
 		{
 			Send-MailMessage -Attachments $emailAttachment -Body $emailBody -BodyAsHtml -From $From `
 				-Port $SmtpPort -SmtpServer $SmtpServer -Subject $emailSubject -To $To `
-				-credential $anonCredentials *>$Null 
+				-Credential $anonCredentials *>$Null 
 		}
 		
 		If ($?)
@@ -3695,7 +3696,7 @@ $Script:Title is attached.
 			Write-Verbose "$(Get-Date -Format G): Trying to send email using current user's credentials with SSL"
 			Send-MailMessage -Attachments $emailAttachment -Body $emailBody -BodyAsHtml -From $From `
 				-Port $SmtpPort -SmtpServer $SmtpServer -Subject $emailSubject -To $To `
-				-UseSSL *>$Null
+				-UseSsl *>$Null
 		}
 		Else
 		{
@@ -3727,13 +3728,13 @@ $Script:Title is attached.
 				{
 					Send-MailMessage -Attachments $emailAttachment -Body $emailBody -BodyAsHtml -From $From `
 						-Port $SmtpPort -SmtpServer $SmtpServer -Subject $emailSubject -To $To `
-						-UseSSL -credential $emailCredentials *>$Null 
+						-UseSsl -Credential $emailCredentials *>$Null 
 				}
 				Else
 				{
 					Send-MailMessage -Attachments $emailAttachment -Body $emailBody -BodyAsHtml -From $From `
 						-Port $SmtpPort -SmtpServer $SmtpServer -Subject $emailSubject -To $To `
-						-credential $emailCredentials *>$Null 
+						-Credential $emailCredentials *>$Null 
 				}
 
 				If ($?)
@@ -3818,7 +3819,7 @@ Function ProcessScriptSetup
 		#get server name
 		#first test to make sure the server is reachable
 		Write-Verbose "$(Get-Date -Format G): Testing to see   If $Script:ServerName is online and reachable"
-		If (Test-Connection -ComputerName $Script:ServerName -quiet -EA 0)
+		If (Test-Connection -ComputerName $Script:ServerName -Quiet -EA 0)
 		{
 			Write-Verbose "$(Get-Date -Format G): Server $Script:ServerName is online."
 		}
@@ -4123,6 +4124,37 @@ Function ProcessScriptEnd
 }
 #endregion
 
+#region Functions
+
+Function Get-CustomFields 
+{
+	Param([hashtable] $OtherConfig)
+	Write-Verbose "$(Get-Date -Format G): `tProcessing Custom Fields"
+	$CustomFields = New-Object System.Collections.ArrayList
+	ForEach ($Item in $OtherConfig.Keys)
+	{
+		If ($Item -like "*customfields*")
+		{
+			$value = $($OtherConfig.$item)
+			if ($value -as [DateTime])
+			{
+				#Thanks to Michael B. SMith for the next two lines
+				$datetime = $value -as [DateTime]
+				$value = $datetime.ToLongDateString() + ' ' + $datetime.ToLongTimeString()
+			}
+			$obj1 = [PSCustomObject] @{
+				Name  = $Item.Replace("XenCenter.CustomFields.", $null)
+				Value = $value
+			}
+			$Null = $CustomFields.Add($obj1)
+		}
+	}
+	Write-Output  $CustomFields
+}
+
+#endregion Functions
+
+
 #region pool
 Function ProcessPool
 {
@@ -4177,7 +4209,7 @@ Function OutputPoolGeneral
 		[array]$xtags = @("<None>")
 	}
 	
-	$NumSockets = (($xshosts).cpu_info.socket_count | Measure-Object -sum).sum
+	$NumSockets = (($xshosts).cpu_info.socket_count | Measure-Object -Sum).sum
 	
 	$PoolLicense = ""
 
@@ -4357,21 +4389,8 @@ Function OutputPoolCustomFields
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Custom Fields"
 
-	$CustomFields = New-Object System.Collections.ArrayList
-	$OtherConfig = ($Script:XSPool | Get-XenPoolProperty -XenProperty OtherConfig -EA 0)
-	
-	ForEach ($Item in $OtherConfig.Keys)
-	{
-		If ($Item -like "*customfields*")
-		{
-			$obj1 = [PSCustomObject] @{
-				Name  = $Item
-				Value = $($OtherConfig.$item)
-			}
-			$Null = $CustomFields.Add($obj1)
-		}
-	}
-	
+	$CustomFields = Get-CustomFields $($Script:XSPool.other_config)
+
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 2 0 "Custom Fields"
@@ -4420,74 +4439,24 @@ Function OutputPoolCustomFields
 		[int]$cnt = -1
 		ForEach ($Item in $CustomFields)
 		{
-			#you can create a DateTime custom field, but it is stored as a string
-			#that string doesn't accept any of the standard PowerShell date formatting options
-			#You can't tell the difference between a datetime or text custom field
-			#The only thing I have found to do is assign a temp variable to the value property
-			#and attempt a [datetime]conversion.   If it works, you have a datetime,   If not, you don't
-			
 			$cnt++
-			try
-			{
-				[datetime]$DateTimeValue = $Item.Value
-
-				$ValidDateTime = $True
-				#Thanks to Michael B. SMith for the next two lines
-				$DateTimeValue = $Item.Value -as [DateTime]
-				$DateTimeValueString = $DateTimeValue.ToLongDateString() + ' ' + $DateTimeValue.ToLongTimeString()
-			}
-
-			catch
-			{
-				#failed to convert to datetime
-				$ValidDateTime = $False
-			}
-			
 			If ($MSWord -or $PDF)
 			{
-				If ($ValidDateTime -eq $False)
-				{
-					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $Item.Value; }
-				}
-				Else
-				{
-					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $DateTimeValueString ; }
-				}
+				$ScriptInformation += @{ Data = $($Item.Name); Value = $Item.Value; }
 			}
 			If ($Text)
 			{
-				If ($ValidDateTime -eq $False)
-				{
-					Line 2 "$($Item.Name.Substring(23)): " $Item.Value
-				}
-				Else
-				{
-					Line 2 "$($Item.Name.Substring(23)): " $DateTimeValueString
-				}
+				Line 2 "$($Item.Name): " $Item.Value
 			}
 			If ($HTML)
 			{
 				If ($cnt -eq 0)
 				{
-					If ($ValidDateTime -eq $False)
-					{
-						$columnHeaders = @($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
-					}
-					Else
-					{
-						$columnHeaders = @($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $DateTimeValueString, $htmlwhite)
-					}
+					$columnHeaders = @($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
 				}
 				Else
 				{
-					If ($ValidDateTime -eq $False)
-					{
-						$rowdata += @(, ($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
-					}
-					Else
-					{
-						$rowdata += @(, ($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $DateTimeValueString, $htmlwhite))
-					}
+					$rowdata += @(, ($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
 				}
 			}
 		}
@@ -5528,8 +5497,8 @@ Function OutputHostGeneral
 	
 	#Thanks to Michael B. Smith for the help in the following calculations
 	[int64]$UnixTime = $XSHost.other_config.boot_time
-	$ServerTime = $XSHost | Get-XenHostProperty -xenproperty servertime
-	$Origin = Get-Date -year 1970 -month 1 -day 1 -hour 0 -minute 0 -second 0
+	$ServerTime = $XSHost | Get-XenHostProperty -XenProperty servertime
+	$Origin = Get-Date -Year 1970 -Month 1 -Day 1 -Hour 0 -Minute 0 -Second 0
 	
 	$ServerBootTime = $Origin.AddSeconds($UnixTime)
 	$ServerUptime = $ServerTime - $ServerBootTime
@@ -5719,33 +5688,13 @@ Function OutputHostGeneral
 	
 }
 
-Function Get-CustomFields 
-{
-	Param([hashtable] $OtherConfig)
-	Write-Verbose "$(Get-Date -Format G): `tProcessing Custom Fields"
-	$CustomFields = New-Object System.Collections.ArrayList
-	$OtherConfig = ($XSHost | Get-XenHostProperty -XenProperty OtherConfig -EA 0)
-	
-	ForEach ($Item in $OtherConfig.Keys)
-	{
-		If ($Item -like "*customfields*")
-		{
-			$obj1 = [PSCustomObject] @{
-				Name  = $Item
-				Value = $($OtherConfig.$item)
-			}
-			$Null = $CustomFields.Add($obj1)
-		}
-	}
-	Write-Output  $CustomFields
-}
 
 Function OutputHostCustomFields
 {
 	Param([object] $XSHost)
 	Write-Verbose "$(Get-Date -Format G): `tOutput Host Custom Fields"
 
-	$CustomFields = Get-CustomFields $($XSHost | Get-XenHostProperty -XenProperty OtherConfig -EA 0)
+	$CustomFields = Get-CustomFields $($XSHost.other_config)
 	
 	If ($MSWord -or $PDF)
 	{
@@ -5796,74 +5745,24 @@ Function OutputHostCustomFields
 		[int]$cnt = -1
 		ForEach ($Item in $CustomFields)
 		{
-			#you can create a DateTime custom field, but it is stored as a string
-			#that string doesn't accept any of the standard PowerShell date formatting options
-			#You can't tell the difference between a datetime or text custom field
-			#The only thing I have found to do is assign a temp variable to the value property
-			#and attempt a [datetime]conversion.   If it works, you have a datetime,   If not, you don't
-			
 			$cnt++
-			try
-			{
-				[datetime]$DateTimeValue = $Item.Value
-
-				$ValidDateTime = $True
-				#Thanks to Michael B. SMith for the next two lines
-				$DateTimeValue = $Item.Value -as [DateTime]
-				$DateTimeValueString = $DateTimeValue.ToLongDateString() + ' ' + $DateTimeValue.ToLongTimeString()
-			}
-
-			catch
-			{
-				#failed to convert to datetime
-				$ValidDateTime = $False
-			}
-			
 			If ($MSWord -or $PDF)
 			{
-				If ($ValidDateTime -eq $False)
-				{
-					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $Item.Value; }
-				}
-				Else
-				{
-					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $DateTimeValueString ; }
-				}
+				$ScriptInformation += @{ Data = $($Item.Name); Value = $Item.Value; }
 			}
 			If ($Text)
 			{
-				If ($ValidDateTime -eq $False)
-				{
-					Line 3 "$($Item.Name.Substring(23)): " $Item.Value
-				}
-				Else
-				{
-					Line 3 "$($Item.Name.Substring(23)): " $DateTimeValueString
-				}
+				Line 3 "$($Item.Name): " $Item.Value
 			}
 			If ($HTML)
 			{
 				If ($cnt -eq 0)
 				{
-					If ($ValidDateTime -eq $False)
-					{
-						$columnHeaders = @($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
-					}
-					Else
-					{
-						$columnHeaders = @($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $DateTimeValueString, $htmlwhite)
-					}
+					$columnHeaders = @($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
 				}
 				Else
 				{
-					If ($ValidDateTime -eq $False)
-					{
-						$rowdata += @(, ($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
-					}
-					Else
-					{
-						$rowdata += @(, ($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $DateTimeValueString, $htmlwhite))
-					}
+					$rowdata += @(, ($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
 				}
 			}
 		}
@@ -7799,20 +7698,7 @@ Function OutputVMCustomFields
 	Param([object] $VM)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Custom Fields"
 
-	$CustomFields = New-Object System.Collections.ArrayList
-	$OtherConfig = ($VM | Get-XenVMProperty -XenProperty OtherConfig -EA 0)
-	
-	ForEach ($Item in $OtherConfig.Keys)
-	{
-		If ($Item -like "*customfields*")
-		{
-			$obj1 = [PSCustomObject] @{
-				Name  = $Item
-				Value = $($OtherConfig.$item)
-			}
-			$Null = $CustomFields.Add($obj1)
-		}
-	}
+	$CustomFields = $CustomFields = Get-CustomFields $($vm.other_config)
 	
 	If ($MSWord -or $PDF)
 	{
@@ -7863,74 +7749,24 @@ Function OutputVMCustomFields
 		[int]$cnt = -1
 		ForEach ($Item in $CustomFields)
 		{
-			#you can create a DateTime custom field, but it is stored as a string
-			#that string doesn't accept any of the standard PowerShell date formatting options
-			#You can't tell the difference between a datetime or text custom field
-			#The only thing I have found to do is assign a temp variable to the value property
-			#and attempt a [datetime]conversion. If it works, you have a datetime, If not, you don't
-			
 			$cnt++
-			try
-			{
-				[datetime]$DateTimeValue = $Item.Value
-
-				$ValidDateTime = $True
-				#Thanks to Michael B. SMith for the next two lines
-				$DateTimeValue = $Item.Value -as [DateTime]
-				$DateTimeValueString = $DateTimeValue.ToLongDateString() + ' ' + $DateTimeValue.ToLongTimeString()
-			}
-
-			catch
-			{
-				#failed to convert to datetime
-				$ValidDateTime = $False
-			}
-			
 			If ($MSWord -or $PDF)
 			{
-				If ($ValidDateTime -eq $False)
-				{
-					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $Item.Value; }
-				}
-				Else
-				{
-					$ScriptInformation += @{ Data = $($Item.Name.Substring(23)); Value = $DateTimeValueString ; }
-				}
+				$ScriptInformation += @{ Data = $($Item.Name); Value = $Item.Value; }
 			}
 			If ($Text)
 			{
-				If ($ValidDateTime -eq $False)
-				{
-					Line 3 "$($Item.Name.Substring(23)): " $Item.Value
-				}
-				Else
-				{
-					Line 3 "$($Item.Name.Substring(23)): " $DateTimeValueString
-				}
+				Line 3 "$($Item.Name): " $Item.Value
 			}
 			If ($HTML)
 			{
 				If ($cnt -eq 0)
 				{
-					If ($ValidDateTime -eq $False)
-					{
-						$columnHeaders = @($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
-					}
-					Else
-					{
-						$columnHeaders = @($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $DateTimeValueString, $htmlwhite)
-					}
+					$columnHeaders = @($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
 				}
 				Else
 				{
-					If ($ValidDateTime -eq $False)
-					{
-						$rowdata += @(, ($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
-					}
-					Else
-					{
-						$rowdata += @(, ($($Item.Name.Substring(23)), ($htmlsilver -bor $htmlbold), $DateTimeValueString, $htmlwhite))
-					}
+					$rowdata += @(, ($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
 				}
 			}
 		}
