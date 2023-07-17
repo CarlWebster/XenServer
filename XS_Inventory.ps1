@@ -4251,32 +4251,7 @@ Function OutputPoolGeneral
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Pool name"; Value = $Script:XSPool.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
-		If ($xtags.Count -gt 0)
-		{
-			$ScriptInformation += @{ Data = "Tags"; Value = $xtags[0]; }
-			$cnt = -1
-			ForEach ($tmp in $xtags)
-			{
-				$cnt++
-				If ($cnt -gt 0)
-				{
-					$ScriptInformation += @{ Data = ""; Value = $tmp; }
-				}
-			}
-		}
-		<#
-		try
-		{
-			$Script:XSPool.Other_Config.folder > $Null
-			
-			$ScriptInformation += @{ Data = "Folder"; Value = $Script:XSPool.Other_Config.folder; }
-		}
-		
-		catch
-		{
-			#not there
-		}
-		#>
+		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", ") }
 		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
 		$ScriptInformation += @{ Data = "Pool License"; Value = $PoolLicense; }
 		$ScriptInformation += @{ Data = "Number of Sockets"; Value = $NumSockets; }
@@ -4305,37 +4280,11 @@ Function OutputPoolGeneral
 		Line 1 "General"
 		Line 2 "Pool name`t`t`t: " $Script:XSPool.name_label
 		Line 2 "Description`t`t`t: " $Script:XSPool.name_description
-		If ($xtags.Count -gt 0)
-		{
-			Line 2 "Tags`t`t`t`t: " $xtags[0]
-			$cnt = -1
-			ForEach ($tmp in $xtags)
-			{
-				$cnt++
-				If ($cnt -gt 0)
-				{
-					Line 5 "  " $tmp
-				}
-			}
-		}
-		<#
-		try
-		{
-			$Script:XSPool.Other_Config.folder > $Null
-			
-			Line 2 "Folder`t`t`t: " $Script:XSPool.Other_Config.folder
-		}
-		
-		catch
-		{
-			#not there
-		}
-		#>
+		Line 2 "Tags`t`t`t`t: " $($xtags -join ", ")
 		Line 2 "Folder`t`t`t`t: " $folderName
 		Line 2 "Pool License`t`t: " $PoolLicense
 		Line 2 "Number of Sockets`t: " $NumSockets
 		Line 2 "XenServer Version`t: " $Script:PoolMasterInfo.software_version.product_version_text_short
-		Line 2 "UUID`t`t`t`t: " $Script:XSPool.uuid
 		Line 0 ""
 	}
 	If ($HTML)
@@ -4344,34 +4293,7 @@ Function OutputPoolGeneral
 		$rowdata = @()
 		$columnHeaders = @("Pool name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
-		If ($xtags.Count -gt 0)
-		{
-			$tmp = $xtags[0].Trim("<", ">")
-			$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), $tmp, $htmlwhite))
-			$cnt = -1
-			ForEach ($tmp in $xtags)
-			{
-				$cnt++
-				If ($cnt -gt 0)
-				{
-					$tmp = $tmp.Trim("<", ">")
-					$rowdata += @(, ('', ($htmlsilver -bor $htmlbold), $tmp, $htmlwhite))
-				}
-			}
-		}
-		<#
-		try
-		{
-			$Script:XSPool.Other_Config.folder > $Null
-			
-			$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),$Script:XSPool.Other_Config.folder,$htmlwhite))
-		}
-		
-		catch
-		{
-			#not there
-		}
-		#>
+		$rowdata += @(, ('UUID', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $folderName, $htmlwhite))
 		$rowdata += @(, ('Pool License', ($htmlsilver -bor $htmlbold), $PoolLicense, $htmlwhite))
 		$rowdata += @(, ('Number of Sockets', ($htmlsilver -bor $htmlbold), $NumSockets, $htmlwhite))
@@ -5529,33 +5451,7 @@ Function OutputHostGeneral
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $XSHost.name_description; }
-		If ($xtags.Count -gt 0)
-		{
-			$ScriptInformation += @{ Data = "Tags"; Value = $xtags[0]; }
-			$cnt = -1
-			ForEach ($tmp in $xtags)
-			{
-				$cnt++
-				If ($cnt -gt 0)
-				{
-					$ScriptInformation += @{ Data = ""; Value = $tmp; }
-				}
-			}
-		}
-		
-		<#
-		try
-		{
-			$XSHost.Other_Config.folder > $Null
-			
-			$ScriptInformation += @{ Data = "Folder"; Value = $XSHost.Other_Config.folder; }
-		}
-		
-		catch
-		{
-			#not there
-		}
-		#>
+		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", "); }
 		$ScriptInformation += @{ Data = "Pool master"; Value = $IAmThePoolMaster; }
 		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
 		$ScriptInformation += @{ Data = "Enabled"; Value = $XSHost.enabled.ToString(); }
@@ -5565,9 +5461,6 @@ Function OutputHostGeneral
 		$ScriptInformation += @{ Data = "Toolstack uptime"; Value = $AgentUptimeString; }
 		$ScriptInformation += @{ Data = "Domain"; Value = $XSHost.external_auth_service_name; }
 		$ScriptInformation += @{ Data = "UUID"; Value = $XSHost.uuid; }
-		#$ScriptInformation += @{ Data = "CPU model name"; Value = $XSHost.cpu_info.modelname; }
-		#$ScriptInformation += @{ Data = "Socket count"; Value = $XSHost.cpu_info.socket_count; }
-		#$ScriptInformation += @{ Data = "CPU count"; Value = $XSHost.cpu_info.cpu_count; }
 
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 			-Columns Data, Value `
@@ -5591,34 +5484,7 @@ Function OutputHostGeneral
 	{
 		Line 1 "Name`t`t`t`t: " "$($XSHost.name_label)"
 		Line 2 "Description`t`t: " $XSHost.name_description
-		If ($xtags.Count -gt 0)
-		{
-			Line 2 "Tags`t`t`t: " $xtags[0]
-			$cnt = -1
-			ForEach ($tmp in $xtags)
-			{
-				$cnt++
-				If ($cnt -gt 0)
-				{
-					Line 4 "  " $tmp
-				}
-			}
-		}
-		
-		<#
-		try
-		
-		{
-			$XSHost.Other_Config.folder > $Null
-			
-			Line 2 "Folder`t`t`t: " $XSHost.Other_Config.folder
-		}
-		
-		catch
-		{
-			#not there
-		}
-		#>
+		Line 1 "Tags`t`t`t`t: " "$($xtags -join ", ")"
 		Line 2 "Pool master`t`t: " $IAmThePoolMaster
 		Line 2 "Folder`t`t`t: " $folderName
 		Line 2 "Enabled`t`t`t: " $XSHost.enabled.ToString()
@@ -5639,34 +5505,7 @@ Function OutputHostGeneral
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $XSHost.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $XSHost.name_description, $htmlwhite))
-		If ($xtags.Count -gt 0)
-		{
-			$tmp = $xtags[0].Trim("<", ">")
-			$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), $tmp, $htmlwhite))
-			$cnt = -1
-			ForEach ($tmp in $xtags)
-			{
-				$cnt++
-				If ($cnt -gt 0)
-				{
-					$tmp = $tmp.Trim("<", ">")
-					$rowdata += @(, ('', ($htmlsilver -bor $htmlbold), $tmp, $htmlwhite))
-				}
-			}
-		}
-		<#
-		try
-		{
-			$XSHost.Other_Config.folder > $Null
-			
-			$rowdata += @(,('Folder',($htmlsilver -bor $htmlbold),$XSHost.Other_Config.folder,$htmlwhite))
-		}
-		
-		catch
-		{
-			#not there
-		}
-		#>
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Pool master', ($htmlsilver -bor $htmlbold), $IAmThePoolMaster, $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), "$folderName", $htmlwhite))
 		$rowdata += @(, ("Enabled", ($htmlsilver -bor $htmlbold), $XSHost.enabled.ToString(), $htmlwhite))
@@ -6628,7 +6467,6 @@ Function OutputHostNetworking
 		ForEach ($Item in $XSNetworks)
 		{
 			$pif = $Item.PIFs | Get-XenPIF | Where-Object { $XSHost.opaque_ref -in $_.host }
-			$customFieldsKeys = $Item.other_config.Keys | Where-Object { $_ -Like "*.CustomFields.*" }
 			if ([String]::IsNullOrEmpty($pif))
 			{
 				$nic = ""
@@ -6717,15 +6555,15 @@ Function OutputHostNetworking
 		If ($MSWord -or $PDF)
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
-			$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrPIFs"; }
+			$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrNICs"; }
 		}
 		If ($Text)
 		{
-			Line 3 "Number of networks`t`t: " "$nrPIFs"
+			Line 3 "Number of networks`t`t: " "$nrNICs"
 		}
 		If ($HTML)
 		{
-			$columnHeaders = @("Number of networks", ($htmlsilver -bor $htmlbold), "$nrPIFs", $htmlwhite)
+			$columnHeaders = @("Number of networks", ($htmlsilver -bor $htmlbold), "$nrNICs", $htmlwhite)
 			$rowdata = @()
 		}
 
