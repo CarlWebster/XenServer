@@ -4157,7 +4157,9 @@ function Convert-SizeToString
 {
 	param (
 		[Parameter(Mandatory = $true)]
-		[Int64]$size
+		[Int64]$Size,
+
+		[Int]$Decimal = 2
 	)
 
 	$tb = 1TB
@@ -4167,19 +4169,19 @@ function Convert-SizeToString
 
 	If ($size -ge $tb)
 	{
-		$result = "{0:N2} TB" -f ($size / $tb)
+		$result = "{0:N$Decimal} TB" -f ($size / $tb)
 	}
-	Elseif ($size -ge $gb)
+	ElseIf ($size -ge $gb)
 	{
-		$result = "{0:N2} GB" -f ($size / $gb)
+		$result = "{0:N$Decimal} GB" -f ($size / $gb)
 	}
-	Elseif ($size -ge $mb)
+	ElseIf ($size -ge $mb)
 	{
-		$result = "{0:N2} MB" -f ($size / $mb)
+		$result = "{0:N$Decimal} MB" -f ($size / $mb)
 	}
-	Elseif ($size -ge $kb)
+	ElseIf ($size -ge $kb)
 	{
-		$result = "{0:N2} KB" -f ($size / $kb)
+		$result = "{0:N$Decimal} KB" -f ($size / $kb)
 	}
 	Else
 	{
@@ -4363,7 +4365,7 @@ Function OutputPoolCustomFields
 		WriteHTMLLine 2 0 "Custom Fields"
 	}
 	
-	If ($CustomFields.Count -eq 0)
+	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
 	{
 		$PoolName = $Script:XSPool.Name_Label
 		If ($MSWord -or $PDF)
@@ -5586,7 +5588,7 @@ Function OutputHostCustomFields
 		WriteHTMLLine 3 0 "Custom Fields"
 	}
 	
-	If ($CustomFields.Count -eq 0)
+	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
 	{
 		$HostName = $XSHost.Name_Label
 
@@ -6236,23 +6238,8 @@ Function OutputHostMemory
 	Write-Verbose "$(Get-Date -Format G): `tOutput Host Memory"
 
 	$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
-	try
-	{
-		$memTotal = '{0:N1} GB' -f $($XSHostMetrics.memory_total / 1GB)
-	}
- catch
-	{
-		$memTotal = '{0:N1} Bytes' -f $XSHostMetrics.memory_total
-	}
-	try
-	{
-		$memFree = '{0:N1} GB' -f $($XSHostMetrics.memory_free / 1GB)
-	}
- catch
-	{
-		$memFree = '{0:N1} Bytes' -f $XSHostMetrics.memory_free
-	}
-
+	$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
+	$memFree = Convert-SizeToString -size $XSHostMetrics.memory_free -Decimal 1
 	$memoryText = "$memFree RAM available ($memTotal)"
 	$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM | Sort-Object -Property name_label)
 	$hostRunningVMs = @($hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $false -and $_.power_state -like "running" })
@@ -6261,48 +6248,19 @@ Function OutputHostMemory
 	$vmMemoryUsed = [Int64]0
 	ForEach ($vm in $hostRunningVMs)
 	{
-		$vmText += '{0}: using   {1:N1} GB' -f $vm.name_label, $($vm.memory_target / 1GB)
+		$vmText += '{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
 		$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
 	}
 
 	$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
-	try
-	{
-		$memXS = '{0:N1} GB' -f $($memXSNum / 1GB)
-	}
- catch
-	{
-		$memXS = '{0:N1} Bytes' -f $($dom0VM.memory_target + $XSHost.memory_overhead)
-	}
+	$memXS = Convert-SizeToString -size $memXSNum -Decimal 1
 	$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
 	$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
-	try
-	{
-		$memXSUsed = '{0:N1} GB' -f $($memXSUsedNum / 1GB)
-		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
-	}
- catch
-	{
-		$memXSUsed = '{0:N1} Bytes' -f $memXSUsedNum
-		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
-	}
-	try
-	{
-		$memXSAvailable = '{0:N1} GB' -f $($memXSAvailableNum / 1GB)
-	}
- catch
-	{
-		$memXSAvailable = '{0:N1} Bytes' -f $memXSAvailableNum
-	}
+	$memXSUsed = Convert-SizeToString -size $memXSUsedNum -Decimal 1
+	$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
+	$memXSAvailable = Convert-SizeToString -size $memXSAvailableNum -Decimal 1
+	$cdMemory = Convert-SizeToString -size $dom0VM.memory_target -Decimal 1
 
-	try
-	{
-		$cdMemory = '{0:N1} GB' -f $($dom0VM.memory_target / 1GB)
-	}
- catch
-	{
-		$cdMemory = "$($dom0VM.memory_target) Bytes"
-	}
 
 	If ($MSWord -or $PDF)
 	{
@@ -6496,6 +6454,9 @@ Function OutputHostStorage
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `tOutput Host Storage"
 
+	$XSHostName = $XSHost.Name_Label
+	$pbds = $XSHost.PBDs | Get-XenPBD
+
 	$storages = @()
 	ForEach ($item in $pbds)
 	{
@@ -6516,9 +6477,9 @@ Function OutputHostStorage
 		{
 			$shared = "no"
 		}
-		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation
-		$size = Convert-SizeToString -Size $sr.physical_size
-		$used = Convert-SizeToString -Size $sr.physical_utilisation
+		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
+		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
+		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
 		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
 		{
 			$usage = '0% (0 B)'
@@ -6863,7 +6824,7 @@ Function OutputHostNICs
 			if ($pifMetrics.carrier -like $true)
 			{
 				$linkStatus = "Connected"
-				If ([String]::IsNullOrEmpty($($item.duplex)) -or $item.duplex -like $false)
+				If ([String]::IsNullOrEmpty($($pifMetrics.duplex)) -or $pifMetrics.duplex -like $false)
 				{
 					$nicDuplex = "Full"
 				}
@@ -7090,23 +7051,7 @@ Function OutputHostGPU
 			$gpuTypesText = ""
 			ForEach ($type in $gpuTypes)
 			{
-				$gpuTypesLine = "$($type.model_name.ToString().Replace("NVIDIA",$null).Trim()) "
-
-
-				try
-				{
-					$sizeGB = $type.framebuffer_size / 1GB
-					$sizeMB = $type.framebuffer_size / 1MB
-					If ($sizeGB -lt 1)
-					{
-						$gpuTypesLine += "/ Framebuffer:$sizeMB MB "
-					}
-					Else
-					{
-						$gpuTypesLine += "/ Framebuffer:$sizeGB GB "
-					}
-				}
-				catch {}
+				$gpuTypesLine = "$($type.model_name.ToString().Replace("NVIDIA",$null).Trim()) / Framebuffer:$(Convert-SizeToString -size $type.framebuffer_size -Decimal 1) "
 				If ($type.opaque_ref -in $Item.enabled_VGPU_types.opaque_ref)
 				{
 					$gpuTypesLine += "/ Enabled"
@@ -7215,13 +7160,23 @@ Function ProcessVMs
 	ForEach ($VMName in $Script:VMNames)
 	{
 		$VM = Get-XenVM -Name $VMName.name_label
-		$VMOSName = $(try { ($VM.guest_metrics | Get-XenVMGuestMetrics).os_version.name } catch { "N/A" })
-		If (!$?)
+		$VMMetrics = $VM.guest_metrics | Get-XenVMGuestMetrics
+		if ([String]::IsNullOrEmpty($VMMetrics) -or [String]::IsNullOrEmpty($($VMMetrics.os_version)) -or $VMMetrics.os_version.Count -lt 1 -or [String]::IsNullOrEmpty($($VMMetrics.os_version.name)))
 		{
 			$VMOSName = "N/A"
 		}
-		$VMHost = $(try { ($VM.resident_on | Get-XenHost).name_label } catch { "N/A" })
+		else 
+		{
+			$VMHost = $VMMetrics.os_version.name
+		}
+
+		<#$VMOSName = $(try { ($VM.guest_metrics | Get-XenVMGuestMetrics).os_version.name } catch { "N/A" })
 		If (!$?)
+		{
+			$VMOSName = "N/A"
+		}#>
+		$VMHostData = $VM.resident_on | Get-XenHost
+		if ([String]::IsNullOrEmpty($VMHostData) -or [String]::IsNullOrEmpty($($VMHostData.name_label)))
 		{
 			If ($VM.power_state -ne "Running")
 			{
@@ -7231,7 +7186,24 @@ Function ProcessVMs
 			{
 				$VMHost = "N/A"
 			}
+			
 		}
+		else 
+		{
+			$VMHost = $VMHostData.name_label
+		}
+
+		<#If (!$?)
+		{
+			If ($VM.power_state -ne "Running")
+			{
+				$VMHost = "VM not running"
+			}
+			Else
+			{
+				$VMHost = "N/A"
+			}
+		}#>
 		OutputVM $VM $VMOSName $VMHost
 		OutputVMStorage $VM $VMHost
 		OutputVMNIC $VM
@@ -7264,30 +7236,10 @@ Function OutputVM
 	{
 		$xenVMDynamicMemory = $false
 	}
-	try
-	{
-		$xenVmMem = "$($VM.memory_static_max / 1GB) GB"
-	}
-	catch
-	{
-		$xenVmMem = "$($VM.memory_static_max) Bytes"
-	}
-	try
-	{
-		$xenVmMemMax = "$($VM.memory_dynamic_max/1GB) GB"
-	}
-	catch
-	{
-		$xenVmMemMax = "$($VM.memory_dynamic_max) Bytes"
-	}
-	try
-	{
-		$xenVmMemMin = "$($VM.memory_dynamic_min/1GB) GB"
-	}
-	catch
-	{
-		$xenVmMemMin = "$($VM.memory_dynamic_min) Bytes"
-	}
+
+	$xenVmMem = Convert-SizeToString -size $VM.memory_static_max -Decimal 1
+	$xenVmMemMax = Convert-SizeToString -size $VM.memory_dynamic_max -Decimal 1
+	$xenVmMemMin = Convert-SizeToString -size $VM.memory_dynamic_min -Decimal 1
 	$bootorder = $vm.HVM_boot_params["order"].Replace("c", "Disk;").Replace("d", "DVD-drive;").Replace("n", "Network;").TrimEnd(";").Split(";")
 	for ($c = 1 ; $c -le $bootorder.count ; $c++)
 	{
@@ -7513,21 +7465,7 @@ Function OutputVMGPU
 		$gpuCount = 0
 		ForEach ($Item in $xenVMGPUs)
 		{
-			try
-			{
-				If (($Item.framebuffer_size / 1GB) -lt 1)
-				{
-					$xenGPUFrameBufferSize = "$($Item.framebuffer_size / 1MB) MB"
-				}
-				Else
-				{
-					$xenGPUFrameBufferSize = "$($Item.framebuffer_size / 1GB) GB"
-				}
-			}
-			catch
-			{
-				$xenGPUFrameBufferSize = "$($Item.framebuffer_size) Bytes"
-			}
+			$xenGPUFrameBufferSize = $(Convert-SizeToString -size $Item.framebuffer_size -Decimal 1)
 			
 			If ($MSWord -or $PDF)
 			{
@@ -7787,7 +7725,7 @@ Function OutputVMCustomFields
 		WriteHTMLLine 3 0 "Custom Fields"
 	}
 	
-	If ($CustomFields.Count -eq 0)
+	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
 	{
 		$VMName = $VM.Name_Label
 
