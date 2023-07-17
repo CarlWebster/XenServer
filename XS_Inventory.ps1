@@ -5371,6 +5371,7 @@ Function ProcessHosts
 		OutputHostManagement $XSHost
 		OutputHostMemory $XSHost
 		OutputHostCPUs $XSHost
+		OutputHostStorage $XSHost
 		OutputHostNetworking $XSHost
 		OutputHostNICs $XSHost
 		OutputHostGPU $XSHost
@@ -6453,6 +6454,38 @@ Function OutputHostCPUs
 		
 }
 
+Function OutputHostStorage
+{
+	Param([object]$XSHost)
+	Write-Verbose "$(Get-Date -Format G): `tOutput Host Storage"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Storage"
+	}
+	If ($Text)
+	{
+		Line 2 "Storage"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Storage"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 1 "Not yet avaiable"
+	}
+	If ($Text)
+	{
+		Line 3 "Not yet avaiable"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 1 "Not yet avaiable"
+	}
+}
+
 Function OutputHostNetworking
 {
 	Param([object]$XSHost)
@@ -7030,6 +7063,7 @@ Function ProcessVMs
 			}
 		}
 		OutputVM $VM $VMOSName $VMHost
+		OutputVMStorage $VM $VMHost
 		OutputVMNIC $VM
 		OutputVMGPU $VM
 		OutputVMCustomFields $VM
@@ -7216,6 +7250,38 @@ Function OutputVM
 		$columnWidths = @("200", "250")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputVMStorage
+{
+	Param([object]$VM, [string]$VMHost)
+	Write-Verbose "$(Get-Date -Format G): `tOutput VM Storage"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Storage"
+	}
+	If ($Text)
+	{
+		Line 2 "Storage"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Storage"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 1 "Not yet avaiable"
+	}
+	If ($Text)
+	{
+		Line 3 "Not yet avaiable"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 1 "Not yet avaiable"
 	}
 }
 
