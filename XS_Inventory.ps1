@@ -554,6 +554,7 @@ Param(
 #       Get-CustomFields
 #		OutputHostNICs
 #		OutputHostNetworking
+#       OutputHostStorage
 #
 #.006
 #	Added Citrix CTA John Billekens as a script coauthor
@@ -4152,6 +4153,42 @@ Function Get-CustomFields
 	Write-Output  $CustomFields
 }
 
+function Convert-SizeToString
+{
+	param (
+		[Parameter(Mandatory = $true)]
+		[Int64]$size
+	)
+
+	$tb = 1TB
+	$gb = 1GB
+	$mb = 1MB
+	$kb = 1KB
+
+	If ($size -ge $tb)
+	{
+		$result = "{0:N2} TB" -f ($size / $tb)
+	}
+	Elseif ($size -ge $gb)
+	{
+		$result = "{0:N2} GB" -f ($size / $gb)
+	}
+	Elseif ($size -ge $mb)
+	{
+		$result = "{0:N2} MB" -f ($size / $mb)
+	}
+	Elseif ($size -ge $kb)
+	{
+		$result = "{0:N2} KB" -f ($size / $kb)
+	}
+	Else
+	{
+		$result = "{0} B" -f $size
+	}
+
+	return $result
+}
+
 #endregion Functions
 
 
@@ -6458,6 +6495,49 @@ Function OutputHostStorage
 {
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `tOutput Host Storage"
+
+	$storages = @()
+	ForEach ($item in $pbds)
+	{
+		$sr = Get-XenSR -Ref $item.SR
+		If ([String]::IsNullOrEmpty($($sr.name_description))) 
+		{
+			$description = '{0} on {1}' -f $sr.name_label, $XSHostName
+		}
+		Else
+		{
+			$description = $($sr.name_description)
+		}
+		If ($sr.shared -like $true)
+		{
+			$shared = "yes"
+		}
+		Else
+		{
+			$shared = "no"
+		}
+		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation
+		$size = Convert-SizeToString -Size $sr.physical_size
+		$used = Convert-SizeToString -Size $sr.physical_utilisation
+		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
+		{
+			$usage = '0% (0 B)'
+		}
+		Else
+		{
+			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
+		}
+		$storages += $sr | Select-Object -Property `
+		@{Name = 'Name'; Expression = { $_.name_label } },
+		@{Name = 'Description'; Expression = { $description } },
+		@{Name = 'Type'; Expression = { $_.type } },
+		@{Name = 'Shared'; Expression = { $shared } },
+		@{Name = 'Usage'; Expression = { $usage } },
+		@{Name = 'Size'; Expression = { $size } },
+		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } }
+	}
+	$storageCount = $storages.Count
+
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 3 0 "Storage"
@@ -6471,19 +6551,107 @@ Function OutputHostStorage
 		WriteHTMLLine 3 0 "Storage"
 	}
 
-	If ($MSWord -or $PDF)
+	If ($storageCount -lt 1)
 	{
-		WriteWordLine 0 1 "Not yet avaiable"
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There is no storage configured for Host $XSHostName"
+		}
+		If ($Text)
+		{
+			Line 3 "There is no storage configured for Host $XSHostName"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There is no storage configured for Host $XSHostName"
+		}
 	}
-	If ($Text)
+	Else
 	{
-		Line 3 "Not yet avaiable"
-		Line 0 ""
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Number of storages"; Value = "$storageCount"; }
+		}
+		If ($Text)
+		{
+			Line 3 "Number of storages`t`t: " "$storageCount"
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Number of storages", ($htmlsilver -bor $htmlbold), "$storageCount", $htmlwhite)
+			$rowdata = @()
+		}
+
+		ForEach ($Item in $storages)
+		{
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+				$ScriptInformation += @{ Data = "  Description"; Value = $($item.Description); }
+				$ScriptInformation += @{ Data = "  Type"; Value = $($item.Type); }
+				$ScriptInformation += @{ Data = "  Shared"; Value = $($item.Shared); }
+				$ScriptInformation += @{ Data = "  Usage"; Value = $($item.Usage); }
+				$ScriptInformation += @{ Data = "  Size"; Value = $($item.Size); }
+				$ScriptInformation += @{ Data = "  Virtual allocation"; Value = $($item.VirtualAllocation); }
+			}
+			If ($Text)
+			{
+				Line 3 "Name`t`t`t`t`t: " $($item.Name)
+				Line 3 "Description`t`t`t`t: " $($item.Description)
+				Line 3 "Type`t`t`t`t`t: " $($item.Type)
+				Line 3 "Shared`t`t`t`t`t: " $($item.Shared)
+				Line 3 "Usage`t`t`t`t`t: " $($item.Usage)
+				Line 3 "Size`t`t`t`t`t: " $($item.Size)
+				Line 3 "Virtual allocation`t`t: " $($item.VirtualAllocation)
+			}
+			If ($HTML)
+			{
+				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+				$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+				$rowdata += @(, ("Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
+				$rowdata += @(, ("Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
+				$rowdata += @(, ("Usage", ($htmlsilver -bor $htmlbold), $($item.Usage), $htmlwhite))
+				$rowdata += @(, ("Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
+				$rowdata += @(, ("Virtual allocation", ($htmlsilver -bor $htmlbold), $($item.VirtualAllocation), $htmlwhite))
+			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(2).Width = 400;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("200", "400")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
 	}
-	If ($HTML)
-	{
-		WriteHTMLLine 0 1 "Not yet avaiable"
-	}
+
+
 }
 
 Function OutputHostNetworking
