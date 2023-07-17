@@ -555,6 +555,7 @@ Param(
 #		OutputHostNICs
 #		OutputHostNetworking
 #       OutputHostStorage
+#       OutputVMStorage
 #
 #.006
 #	Added Citrix CTA John Billekens as a script coauthor
@@ -7375,10 +7376,58 @@ Function OutputVM
 	}
 }
 
+
 Function OutputVMStorage
 {
 	Param([object]$VM, [string]$VMHost)
 	Write-Verbose "$(Get-Date -Format G): `tOutput VM Storage"
+	$VMName = $VM.Name_Label
+	$vbds = $Vm.VBDs | Get-XenVBD
+	
+	$storages = @()
+	ForEach ($item in $($vbds | Where-Object {$_.type -ne "CD"} | Sort-Object -Property userdevice))
+	{
+		$vdi = $item.VDI | Get-XenVDI
+		$sr = $vdi.SR | Get-XenSR
+		If ($vdi.read_only -like $true)
+		{
+			$readonly = "Yes"
+		}
+		Else
+		{
+			$readonly = "No"
+		}
+		If ($item.currently_attached -like $true)
+		{
+			$active = "Yes"
+		}
+		Else
+		{
+			$active = "No"
+		}
+		If ([String]::IsNullOrEmpty($($item.device)))
+		{
+			$device = "<unknown>"
+		}
+		Else
+		{
+			$device = '/dev/{0}' -f $item.device
+		}
+		$srText = '{0} on {1}' -f $sr.name_label, $VMHost
+		$storages += $item | Select-Object -Property `
+		@{Name = 'Position'; Expression = { $_.userdevice } },
+		@{Name = 'Name'; Expression = { $vdi.name_label } },
+		@{Name = 'Description'; Expression = { "$($vdi.name_description)" } },
+		@{Name = 'SR'; Expression = { $srText } },
+		@{Name = 'Size'; Expression = { $(Convert-SizeToString -Size $vdi.virtual_size -Decimal 0) } },
+		@{Name = 'ReadOnly'; Expression = { $readonly } },
+		@{Name = 'Priority'; Expression = { "?" } },
+		@{Name = 'Active'; Expression = { $active } },
+		@{Name = 'DevicePath'; Expression = { $device } }
+	}
+
+	$storageCount = $storages.Count
+
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 3 0 "Storage"
@@ -7392,20 +7441,117 @@ Function OutputVMStorage
 		WriteHTMLLine 3 0 "Storage"
 	}
 
-	If ($MSWord -or $PDF)
+	If ($storageCount -lt 1)
 	{
-		WriteWordLine 0 1 "Not yet avaiable"
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There is no storage configured for VM $VMName"
+		}
+		If ($Text)
+		{
+			Line 3 "There is no storage configured for VM $VMName"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There is no storage configured for VM $VMName"
+		}
 	}
-	If ($Text)
+	Else
 	{
-		Line 3 "Not yet avaiable"
-		Line 0 ""
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Number of storages"; Value = "$storageCount"; }
+		}
+		If ($Text)
+		{
+			Line 3 "Number of storages`t`t: " "$storageCount"
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Number of storages", ($htmlsilver -bor $htmlbold), "$storageCount", $htmlwhite)
+			$rowdata = @()
+		}
+
+		ForEach ($Item in $storages)
+		{
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Position"; Value = $($item.Position); }
+				$ScriptInformation += @{ Data = "     Name"; Value = $($item.Name); }
+				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
+				$ScriptInformation += @{ Data = "     SR"; Value = $($item.SR); }
+				$ScriptInformation += @{ Data = "     Size"; Value = $($item.Size); }
+				$ScriptInformation += @{ Data = "     Read Only"; Value = $($item.ReadOnly); }
+				$ScriptInformation += @{ Data = "     Priority"; Value = $($item.Priority); }
+				$ScriptInformation += @{ Data = "     Active"; Value = $($item.Active); }
+				$ScriptInformation += @{ Data = "     Device Path"; Value = $($item.DevicePath); }
+			}
+			If ($Text)
+			{
+				Line 3 "Position`t`t`t: " $($item.Position)
+				Line 4 "Name`t`t: " $($item.Name)
+				Line 4 "Description`t`t`t: " $($item.Description)
+				Line 4 "SR`t`t`t: " $($item.SR)
+				Line 4 "Size`t`t`t: " $($item.Size)
+				Line 4 "Read Only`t`t`t: " $($item.ReadOnly)
+				Line 4 "Priority`t`t`t: " $($item.Priority)
+				Line 4 "Active`t`t`t: " $($item.Active)
+				Line 4 "Device Path`t: " $($item.DevicePath)
+				Line 0 ""
+			}
+			If ($HTML)
+			{
+				$rowdata += @(, ("Position", ($htmlsilver -bor $htmlbold), $($item.Position), ($htmlsilver -bor $htmlbold)))
+				$rowdata += @(, ("     Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite))
+				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+				$rowdata += @(, ("     SR", ($htmlsilver -bor $htmlbold), $($item.SR), $htmlwhite))
+				$rowdata += @(, ("     Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
+				$rowdata += @(, ("     Read Only", ($htmlsilver -bor $htmlbold), $($item.ReadOnly), $htmlwhite))
+				$rowdata += @(, ("     Priority", ($htmlsilver -bor $htmlbold), $($item.Priority), $htmlwhite))
+				$rowdata += @(, ("     Active", ($htmlsilver -bor $htmlbold), $($item.Active), $htmlwhite))
+				$rowdata += @(, ("     Device Path", ($htmlsilver -bor $htmlbold), $($item.DevicePath), $htmlwhite))
+			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(2).Width = 400;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("200", "400")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
 	}
-	If ($HTML)
-	{
-		WriteHTMLLine 0 1 "Not yet avaiable"
-	}
+
+
 }
+
+
 
 Function OutputVMGPU
 {
