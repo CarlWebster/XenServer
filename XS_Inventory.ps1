@@ -429,7 +429,7 @@
 	NAME: XS_Inventory.ps1
 	VERSION: 0.007
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 07, 2023
+	LASTEDIT: July 17, 2023
 #>
 
 #endregion
@@ -546,7 +546,7 @@ Param(
 #		OutputHostLicense
 #		OutputHostVersion
 #		OutputHostManagement
-#   Modified the folowing functions
+#   Modified the following Functions
 #       OutputPoolUpdates
 #       OutputPoolGeneral
 #       OutputHostGeneral
@@ -566,8 +566,8 @@ Param(
 #		Output VM
 #	Added the following Functions:
 #		OutputHostPIF
-#		Function OutputVMGPU
-#		Function OutputVMNIC
+#		OutputVMGPU
+#		OutputVMNIC
 #
 #.005
 #	For the Host report section
@@ -672,9 +672,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.006'
+$script:MyVersion = '0.007'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/05/2023"
+$tmpdate = [datetime] "07/17/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -3819,7 +3819,7 @@ Function ProcessScriptSetup
 	{
 		#get server name
 		#first test to make sure the server is reachable
-		Write-Verbose "$(Get-Date -Format G): Testing to see   If $Script:ServerName is online and reachable"
+		Write-Verbose "$(Get-Date -Format G): Testing to see if $Script:ServerName is online and reachable"
 		If (Test-Connection -ComputerName $Script:ServerName -Quiet -EA 0)
 		{
 			Write-Verbose "$(Get-Date -Format G): Server $Script:ServerName is online."
@@ -4315,10 +4315,10 @@ Function OutputPoolGeneral
 	If ($Text)
 	{
 		Line 1 "General"
-		Line 2 "Pool name`t`t`t: " $Script:XSPool.name_label
-		Line 2 "Description`t`t`t: " $Script:XSPool.name_description
-		Line 2 "Tags`t`t`t`t: " $($xtags -join ", ")
-		Line 2 "Folder`t`t`t`t: " $folderName
+		Line 2 "Pool name`t`t: " $Script:XSPool.name_label
+		Line 2 "Description`t`t: " $Script:XSPool.name_description
+		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
+		Line 2 "Folder`t`t`t: " $folderName
 		Line 2 "Pool License`t`t: " $PoolLicense
 		Line 2 "Number of Sockets`t: " $NumSockets
 		Line 2 "XenServer Version`t: " $Script:PoolMasterInfo.software_version.product_version_text_short
@@ -4688,7 +4688,7 @@ Function OutputPoolPowerOn
 			}
 			If ($Text)
 			{
-				Line 2 "Server`t`t`t: " "$($XSHost.Name_Label)"
+				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
 				Line 2 "Power On mode`t: " "Disabled"
 				Line 0 ""
 			}
@@ -5527,9 +5527,9 @@ Function OutputHostGeneral
 		Line 2 "Folder`t`t`t: " $folderName
 		Line 2 "Enabled`t`t`t: " $XSHost.enabled.ToString()
 		Line 2 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
-		Line 2 "Log destination`t: " $LogLocation
-		Line 2 "Server uptime`t: " $ServerUptimeString
-		Line 2 "Toolstack uptime: " $AgentUptimeString
+		Line 2 "Log destination`t`t: " $LogLocation
+		Line 2 "Server uptime`t`t: " $ServerUptimeString
+		Line 2 "Toolstack uptime`t: " $AgentUptimeString
 		Line 2 "Domain`t`t`t: " $XSHost.external_auth_service_name
 		Line 2 "UUID`t`t`t: " $XSHost.uuid
 		#Line 2 "CPU model name`t: " $XSHost.cpu_info.modelname
@@ -5876,7 +5876,7 @@ Function OutputHostPowerOn
 		}
 		If ($Text)
 		{
-			Line 3 "Server`t`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
 			Line 3 "Power On mode`t: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
 			Line 3 "Configuration options"
 
@@ -6001,11 +6001,11 @@ function OutputHostLicense
 	}
 	If ($Text)
 	{
-		Line 3 "Status`t`t`t`t`t: " "$licenseStatus"
-		Line 3 "License`t`t`t`t`t: " "$($XSHost.license_params["sku_marketing_name"])"
-		Line 3 "Number of Sockets`t`t: " $($XSHost.license_params["sockets"])
+		Line 3 "Status`t`t`t: " "$licenseStatus"
+		Line 3 "License`t`t`t: " "$($XSHost.license_params["sku_marketing_name"])"
+		Line 3 "Number of Sockets`t: " $($XSHost.license_params["sockets"])
 		Line 3 "License Server Address`t: " "$($XSHost.license_server["address"])"
-		Line 3 "License Server Port`t`t: " "$($XSHost.license_server["port"])"
+		Line 3 "License Server Port`t: " "$($XSHost.license_server["port"])"
 	}
 	If ($HTML)
 	{
@@ -6090,7 +6090,7 @@ Function OutputHostVersion
 	{
 		Line 3 "Build date`t: " "$($XSHost.software_version["date"])"
 		Line 3 "Version`t`t: " "$($XSHost.software_version["product_version_text"])"
-		Line 3 "DBV`t`t`t: " "$($XSHost.software_version["dbv"])"
+		Line 3 "DBV`t`t: " "$($XSHost.software_version["dbv"])"
 	}
 	If ($HTML)
 	{
@@ -6188,7 +6188,7 @@ Function OutputHostManagement
 	}
 	If ($Text)
 	{
-		Line 3 "DNS hostname`t`t`t: " "$($XSHost.hostname)"
+		Line 3 "DNS hostname`t`t: " "$($XSHost.hostname)"
 		Line 3 "Management interface`t: " "$($managementIPs -join ", ")"
 	}
 	If ($HTML)
@@ -6342,13 +6342,13 @@ Function OutputHostMemory
 	}
 	If ($Text)
 	{
-		Line 3 "Server`t`t`t`t`t: " "$($memoryText)"
-		Line 3 "VMs`t`t`t`t`t`t: " "$($hostRunningVMs.Count)"
-		$vmText | ForEach-Object { Line 9 "  $($_)" }
-		Line 3 "Citrix Hypervisor`t`t: " "$($memXS)"
+		Line 3 "Server`t`t`t: " "$($memoryText)"
+		Line 3 "VMs`t`t`t: " "$($hostRunningVMs.Count)"
+		$vmText | ForEach-Object { Line 6 "  $($_)" }
+		Line 3 "Citrix Hypervisor`t: " "$($memXS)"
 		Line 3 "Control domain memory`t: " "$($cdMemory)"
-		Line 3 "Available memory`t`t: " "$($memXSAvailable)"
-		Line 3 "Total max memory`t`t: " "$($memXSUsed) ($memXSUsedPct of total memory)"
+		Line 3 "Available memory`t: " "$($memXSAvailable)"
+		Line 3 "Total max memory`t: " "$($memXSUsed) ($memXSUsedPct of total memory)"
 	}
 	If ($HTML)
 	{
@@ -6399,7 +6399,7 @@ Function OutputHostCPUs
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `tOutput Host CPUs"
 
-	$hostCPUCount = '0 -   {0}' -f $($XSHost.cpu_info["cpu_count"] - 1)
+	$hostCPUCount = '0 - {0}' -f $($XSHost.cpu_info["cpu_count"] - 1)
 	$hostCPUInfo = @()
 	$hostCPUInfo += 'Vendor:   {0}' -f $XSHost.cpu_info["vendor"]
 	$hostCPUInfo += 'Model:   {0}' -f $XSHost.cpu_info["modelname"]
@@ -6445,7 +6445,7 @@ Function OutputHostCPUs
 	}
 	If ($Text)
 	{
-		Line 3 "CPU`t`t: " "$($hostCPUCount)"
+		Line 3 "CPU`t: " "$($hostCPUCount)"
 		Line 3 "Vendor`t: " "$($hostVendor)"
 		Line 3 "Model`t: " "$($hostModel)"
 		Line 3 "Speed`t: " "$($hostSpeed)"
@@ -6589,32 +6589,33 @@ Function OutputHostStorage
 			If ($MSWord -or $PDF)
 			{
 				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
-				$ScriptInformation += @{ Data = "  Description"; Value = $($item.Description); }
-				$ScriptInformation += @{ Data = "  Type"; Value = $($item.Type); }
-				$ScriptInformation += @{ Data = "  Shared"; Value = $($item.Shared); }
-				$ScriptInformation += @{ Data = "  Usage"; Value = $($item.Usage); }
-				$ScriptInformation += @{ Data = "  Size"; Value = $($item.Size); }
-				$ScriptInformation += @{ Data = "  Virtual allocation"; Value = $($item.VirtualAllocation); }
+				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
+				$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
+				$ScriptInformation += @{ Data = "     Shared"; Value = $($item.Shared); }
+				$ScriptInformation += @{ Data = "     Usage"; Value = $($item.Usage); }
+				$ScriptInformation += @{ Data = "     Size"; Value = $($item.Size); }
+				$ScriptInformation += @{ Data = "     Virtual allocation"; Value = $($item.VirtualAllocation); }
 			}
 			If ($Text)
 			{
-				Line 3 "Name`t`t`t`t`t: " $($item.Name)
-				Line 3 "Description`t`t`t`t: " $($item.Description)
-				Line 3 "Type`t`t`t`t`t: " $($item.Type)
-				Line 3 "Shared`t`t`t`t`t: " $($item.Shared)
-				Line 3 "Usage`t`t`t`t`t: " $($item.Usage)
-				Line 3 "Size`t`t`t`t`t: " $($item.Size)
-				Line 3 "Virtual allocation`t`t: " $($item.VirtualAllocation)
+				Line 3 "Name`t`t`t: " $($item.Name)
+				Line 4 "Description`t`t: " $($item.Description)
+				Line 4 "Type`t`t`t: " $($item.Type)
+				Line 4 "Shared`t`t`t: " $($item.Shared)
+				Line 4 "Usage`t`t`t: " $($item.Usage)
+				Line 4 "Size`t`t`t: " $($item.Size)
+				Line 4 "Virtual allocation`t: " $($item.VirtualAllocation)
+				Line 0 ""
 			}
 			If ($HTML)
 			{
 				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
-				$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-				$rowdata += @(, ("Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
-				$rowdata += @(, ("Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
-				$rowdata += @(, ("Usage", ($htmlsilver -bor $htmlbold), $($item.Usage), $htmlwhite))
-				$rowdata += @(, ("Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
-				$rowdata += @(, ("Virtual allocation", ($htmlsilver -bor $htmlbold), $($item.VirtualAllocation), $htmlwhite))
+				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+				$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
+				$rowdata += @(, ("     Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
+				$rowdata += @(, ("     Usage", ($htmlsilver -bor $htmlbold), $($item.Usage), $htmlwhite))
+				$rowdata += @(, ("     Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
+				$rowdata += @(, ("     Virtual allocation", ($htmlsilver -bor $htmlbold), $($item.VirtualAllocation), $htmlwhite))
 			}
 		}
 		
@@ -6719,7 +6720,6 @@ Function OutputHostNetworking
 			@{Name = 'MAC'; Expression = { $mac } },
 			@{Name = 'MTU'; Expression = { $item.MTU } }
 		}
-
 	}
 
 	If ($MSWord -or $PDF)
@@ -6760,7 +6760,8 @@ Function OutputHostNetworking
 		}
 		If ($Text)
 		{
-			Line 3 "Number of networks`t`t: " "$nrNICs"
+			Line 3 "Number of networks: " "$nrNICs"
+			Line 0 ""
 		}
 		If ($HTML)
 		{
@@ -6773,35 +6774,35 @@ Function OutputHostNetworking
 			If ($MSWord -or $PDF)
 			{
 				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
-				$ScriptInformation += @{ Data = "  Description"; Value = $($item.Description); }
-				$ScriptInformation += @{ Data = "  NIC"; Value = $($item.NIC); }
-				$ScriptInformation += @{ Data = "  VLAN"; Value = $($item.VLAN); }
-				$ScriptInformation += @{ Data = "  Auto"; Value = $($item.Auto); }
-				$ScriptInformation += @{ Data = "  Link Status"; Value = $($item.LinkStatus); }
-				$ScriptInformation += @{ Data = "  MAC"; Value = $($item.MAC); }
-				$ScriptInformation += @{ Data = "  MTU"; Value = $($item.MTU); }
+				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
+				$ScriptInformation += @{ Data = "     NIC"; Value = $($item.NIC); }
+				$ScriptInformation += @{ Data = "     VLAN"; Value = $($item.VLAN); }
+				$ScriptInformation += @{ Data = "     Auto"; Value = $($item.Auto); }
+				$ScriptInformation += @{ Data = "     Link Status"; Value = $($item.LinkStatus); }
+				$ScriptInformation += @{ Data = "     MAC"; Value = $($item.MAC); }
+				$ScriptInformation += @{ Data = "     MTU"; Value = $($item.MTU); }
 			}
 			If ($Text)
 			{
-				Line 3 "Name`t`t`t`t`t: " $($item.Name)
-				Line 3 "Description`t`t`t`t: " $($item.Description)
-				Line 3 "NIC`t`t`t`t`t`t: " $($item.NIC)
-				Line 3 "VLAN`t`t`t`t`t: " $($item.VLAN)
-				Line 3 "Auto`t`t`t`t`t: " $($item.Auto)
-				Line 3 "Link Status`t`t`t`t: " $($item.LinkStatus)
-				Line 3 "MAC`t`t`t`t`t`t: " $($item.MAC)
-				Line 3 "MTU`t`t`t`t`t`t: " $($item.MTU)
+				Line 3 "Name: " $($item.Name)
+				Line 4 "Description`t: " $($item.Description)
+				Line 4 "NIC`t`t: " $($item.NIC)
+				Line 4 "VLAN`t`t: " $($item.VLAN)
+				Line 4 "Auto`t`t: " $($item.Auto)
+				Line 4 "Link Status`t: " $($item.LinkStatus)
+				Line 4 "MAC`t`t: " $($item.MAC)
+				Line 4 "MTU`t`t: " $($item.MTU)
 			}
 			If ($HTML)
 			{
 				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
-				$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-				$rowdata += @(, ("NIC", ($htmlsilver -bor $htmlbold), $($item.NIC), $htmlwhite))
-				$rowdata += @(, ("VLAN", ($htmlsilver -bor $htmlbold), $($item.VLAN), $htmlwhite))
-				$rowdata += @(, ("Auto", ($htmlsilver -bor $htmlbold), $($item.Auto), $htmlwhite))
-				$rowdata += @(, ("Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus), $htmlwhite))
-				$rowdata += @(, ("MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
-				$rowdata += @(, ("MTU", ($htmlsilver -bor $htmlbold), $($item.MTU), $htmlwhite))
+				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+				$rowdata += @(, ("     NIC", ($htmlsilver -bor $htmlbold), $($item.NIC), $htmlwhite))
+				$rowdata += @(, ("     VLAN", ($htmlsilver -bor $htmlbold), $($item.VLAN), $htmlwhite))
+				$rowdata += @(, ("     Auto", ($htmlsilver -bor $htmlbold), $($item.Auto), $htmlwhite))
+				$rowdata += @(, ("     Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus), $htmlwhite))
+				$rowdata += @(, ("     MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
+				$rowdata += @(, ("     MTU", ($htmlsilver -bor $htmlbold), $($item.MTU), $htmlwhite))
 			}
 		}
 		
@@ -6816,8 +6817,8 @@ Function OutputHostNetworking
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
-			$Table.Columns.Item(2).Width = 400;
+			$Table.Columns.Item(1).Width = 125;
+			$Table.Columns.Item(2).Width = 175;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -6832,7 +6833,7 @@ Function OutputHostNetworking
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("200", "400")
+			$columnWidths = @("150", "200")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -6939,7 +6940,8 @@ Function OutputHostNICs
 		}
 		If ($Text)
 		{
-			Line 3 "Number of NICs`t`t: " "$nrNICSs"
+			Line 3 "Number of NICs: " "$nrNICSs"
+			Line 0 ""
 		}
 		If ($HTML)
 		{
@@ -6952,41 +6954,41 @@ Function OutputHostNICs
 			If ($MSWord -or $PDF)
 			{
 				$ScriptInformation += @{ Data = "NIC"; Value = $($Item.Name); }
-				$ScriptInformation += @{ Data = "  MAC"; Value = $($item.MAC); }
-				$ScriptInformation += @{ Data = "  Link Status"; Value = $($item.LinkStatus); }
-				$ScriptInformation += @{ Data = "  Speed"; Value = $($item.Speed); }
-				$ScriptInformation += @{ Data = "  Duplex"; Value = $($item.Duplex); }
-				$ScriptInformation += @{ Data = "  Vendor"; Value = $($item.Vendor); }
-				$ScriptInformation += @{ Data = "  Device"; Value = $($item.Device); }
-				$ScriptInformation += @{ Data = "  PCI Bus Path"; Value = $($item.PCIBusPath); }
-				$ScriptInformation += @{ Data = "  FCoE Capable"; Value = $($item.FCoE); }
-				$ScriptInformation += @{ Data = "  SR-IOV Capable"; Value = $($item.SRIOV); }
+				$ScriptInformation += @{ Data = "     MAC"; Value = $($item.MAC); }
+				$ScriptInformation += @{ Data = "     Link Status"; Value = $($item.LinkStatus); }
+				$ScriptInformation += @{ Data = "     Speed"; Value = $($item.Speed); }
+				$ScriptInformation += @{ Data = "     Duplex"; Value = $($item.Duplex); }
+				$ScriptInformation += @{ Data = "     Vendor"; Value = $($item.Vendor); }
+				$ScriptInformation += @{ Data = "     Device"; Value = $($item.Device); }
+				$ScriptInformation += @{ Data = "     PCI Bus Path"; Value = $($item.PCIBusPath); }
+				$ScriptInformation += @{ Data = "     FCoE Capable"; Value = $($item.FCoE); }
+				$ScriptInformation += @{ Data = "     SR-IOV Capable"; Value = $($item.SRIOV); }
 			}
 			If ($Text)
 			{
-				Line 3 "NIC`t`t`t`t`t: " $($Item.Name)
-				Line 3 "  MAC`t`t`t`t: " $($item.MAC)
-				Line 3 "  Link Status`t`t: " $($item.LinkStatus)
-				Line 3 "  Speed`t`t`t`t: " $($item.Speed)
-				Line 3 "  Duplex`t`t`t: " $($item.Duplex)
-				Line 3 "  Vendor`t`t`t: " $($item.Vendor)
-				Line 3 "  Device`t`t`t: " $($item.Device)
-				Line 3 "  PCI Bus Path`t`t: " $($item.PCIBusPath)
-				Line 3 "  FCoE Capable`t`t: " $($item.FCoE)
-				Line 3 "  SR-IOV Capable`t: " $($item.SRIOV)
+				Line 3 "NIC: " $($Item.Name)
+				Line 4 "MAC`t`t: " $($item.MAC)
+				Line 4 "Link Status`t: " $($item.LinkStatus)
+				Line 4 "Speed`t`t: " $($item.Speed)
+				Line 4 "Duplex`t`t: " $($item.Duplex)
+				Line 4 "Vendor`t`t: " $($item.Vendor)
+				Line 4 "Device`t`t: " $($item.Device)
+				Line 4 "PCI Bus Path`t: " $($item.PCIBusPath)
+				Line 4 "FCoE Capable`t: " $($item.FCoE)
+				Line 4 "SR-IOV Capable`t: " $($item.SRIOV)
 			}
 			If ($HTML)
 			{
 				$rowdata += @(, ("NIC", ($htmlsilver -bor $htmlbold), $($Item.Name), ($htmlsilver -bor $htmlbold)))
-				$rowdata += @(, ("  MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
-				$rowdata += @(, ("  Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus), $htmlwhite))
-				$rowdata += @(, ("  Speed", ($htmlsilver -bor $htmlbold), $($item.Speed), $htmlwhite))
-				$rowdata += @(, ("  Duplex", ($htmlsilver -bor $htmlbold), $($item.Duplex), $htmlwhite))
-				$rowdata += @(, ("  Vendor", ($htmlsilver -bor $htmlbold), $($item.Vendor), $htmlwhite))
-				$rowdata += @(, ("  Device", ($htmlsilver -bor $htmlbold), $($item.Device), $htmlwhite))
-				$rowdata += @(, ("  PCI Bus Path", ($htmlsilver -bor $htmlbold), $($item.PCIBusPath), $htmlwhite))
-				$rowdata += @(, ("  FCoE Capable", ($htmlsilver -bor $htmlbold), $($item.FCoE), $htmlwhite))
-				$rowdata += @(, ("  SR-IOV Capable", ($htmlsilver -bor $htmlbold), $($item.SRIOV), $htmlwhite))
+				$rowdata += @(, ("     MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
+				$rowdata += @(, ("     Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus), $htmlwhite))
+				$rowdata += @(, ("     Speed", ($htmlsilver -bor $htmlbold), $($item.Speed), $htmlwhite))
+				$rowdata += @(, ("     Duplex", ($htmlsilver -bor $htmlbold), $($item.Duplex), $htmlwhite))
+				$rowdata += @(, ("     Vendor", ($htmlsilver -bor $htmlbold), $($item.Vendor), $htmlwhite))
+				$rowdata += @(, ("     Device", ($htmlsilver -bor $htmlbold), $($item.Device), $htmlwhite))
+				$rowdata += @(, ("     PCI Bus Path", ($htmlsilver -bor $htmlbold), $($item.PCIBusPath), $htmlwhite))
+				$rowdata += @(, ("     FCoE Capable", ($htmlsilver -bor $htmlbold), $($item.FCoE), $htmlwhite))
+				$rowdata += @(, ("     SR-IOV Capable", ($htmlsilver -bor $htmlbold), $($item.SRIOV), $htmlwhite))
 			}
 		}
 		
@@ -7072,7 +7074,7 @@ Function OutputHostGPU
 		}
 		If ($Text)
 		{
-			Line 3 "Number of GPU's Installed`t`t: " "$nrGPUs"
+			Line 3 "Number of GPU's Installed: " "$nrGPUs"
 		}
 		If ($HTML)
 		{
@@ -7140,10 +7142,10 @@ Function OutputHostGPU
 			If ($Text)
 			{
 				Line 3 "" ""
-				Line 3 "Name`t`t`t`t`t`t`t: " $($gpuGroup.name_label)
-				Line 3 "vGPU allocation`t`t`t`t`t: " $($allocation)
+				Line 3 "Name`t`t`t`t: " $($gpuGroup.name_label)
+				Line 3 "vGPU allocation`t`t`t: " $($allocation)
 				Line 3 "Primary host display adapter`t: " $($primaryAdapter)
-				Line 3 "vGPU profiles`t`t`t`t`t: " $($gpuTypesText)
+				Line 3 "vGPU profiles`t`t`t: " $($gpuTypesText)
 			}
 			If ($HTML)
 			{
