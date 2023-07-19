@@ -6592,8 +6592,8 @@ Function OutputHostStorage
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
-			$Table.Columns.Item(2).Width = 400;
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -6608,7 +6608,7 @@ Function OutputHostStorage
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("200", "400")
+			$columnWidths = @("150", "350")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -7114,8 +7114,8 @@ Function OutputHostGPU
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
-			$Table.Columns.Item(2).Width = 400;
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -7130,7 +7130,7 @@ Function OutputHostGPU
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("200", "400")
+			$columnWidths = @("150", "350")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -7168,7 +7168,7 @@ Function ProcessVMs
 		}
 		else 
 		{
-			$VMHost = $VMMetrics.os_version.name
+			$VMOSName = $VMMetrics.os_version.name
 		}
 
 		<#$VMOSName = $(try { ($VM.guest_metrics | Get-XenVMGuestMetrics).os_version.name } catch { "N/A" })
