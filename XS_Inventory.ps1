@@ -8000,36 +8000,40 @@ Function OutputVMSnapshots
 	$xenVMs = $vm.VBDs | Get-XenVBD | Where-Object { $_.type -like "Disk" } | Select-Object -ExpandProperty VDI | Get-XenVDI | Select-Object -ExpandProperty snapshots | Get-XenVDI | Select-Object -ExpandProperty VBDs | Get-XenVBD | Select-Object -ExpandProperty VM | Get-XenVM | Sort-Object snapshot_time, uuid -Unique
 
 	$snapshots = @()
-	ForEach ($item in $xenVMs)
-	{
-		if ($vm.opaque_ref -eq $item.parent.opaque_ref)
-		{
+	ForEach ($item in $xenVMs) {
+		if ($vm.opaque_ref -eq $item.parent.opaque_ref) {
 			$parent = $($vm.name_label)
-		}
-		else
-		{
-			$parentVM = $xenVMs | Where-Object { $_.opaque_ref -eq $item.parent.opaque_ref } | Select-Object name_label
-			if ($null -ne $parentVM)
-			{
-				$parent = $parentVM.name_label
-			}
-			else
-			{
+		} else {
+			$parentVM = $xenVMs | Where-Object { $_.opaque_ref -eq $item.parent.opaque_ref } | Select-Object -ExpandProperty  name_label
+			if ($null -ne $parentVM) {
+				$parent = $parentVM
+			} else {
 				$parent = "<self>"
+			}
+		}
+		if ($item.children.Count -eq 0) {
+			$children = ""
+		} else {
+			$childVMs = @($xenVMs | Where-Object { $_.opaque_ref -in $item.children.opaque_ref } | Select-Object -ExpandProperty name_label)
+			if ($childVMs.Count -eq 0) {
+				$children = ""
+			} else {
+				$children = $childVMs -join ", "
 			}
 		}
 		$snapshotDateTime = $($item.snapshot_time -as [datetime]).ToLocalTime()
 		$snapshotDateTimeValue = '{0} {1}' -f $snapshotDateTime.ToLongDateString(), $snapshotDateTime.ToLongTimeString()
 		$snapshots += $item | Select-Object -Property `
-		@{Name = 'Name'; Expression = { $_.name_label } },
-		@{Name = 'Description'; Expression = { $_.name_description } },
-		@{Name = 'Parent'; Expression = { $parent } },
-		@{Name = 'SnapshotTime'; Expression = { $snapshotDateTimeValue } },
-		@{Name = 'Tags'; Expression = { $item.tags -join ", " } },
-		@{Name = 'Folder'; Expression = { $item.other_config["folder"] } },
-		@{Name = 'CustomFields'; Expression = { Get-XSCustomFields $item.other_config } }
+			@{Name = 'Name'; Expression = { $_.name_label } },
+			@{Name = 'Description'; Expression = { $_.name_description } },
+			@{Name = 'Parent'; Expression = { $parent } },
+			@{Name = 'Children'; Expression = { $children } },
+			@{Name = 'SnapshotTime'; Expression = { $snapshotDateTimeValue } },
+			@{Name = 'Tags'; Expression = { $item.tags -join ", " } },
+			@{Name = 'Folder'; Expression = { $item.other_config["folder"] } },
+			@{Name = 'CustomFields'; Expression = { Get-XSCustomFields $item.other_config } }
 	}
-	
+		
 	$nrSnapshots = $snapshots.Count
 	$VMName = $VM.Name_Label
 
@@ -8084,6 +8088,7 @@ Function OutputVMSnapshots
 				$ScriptInformation += @{ Data = "Name"; Value = "$($Item.Name)"; }
 				$ScriptInformation += @{ Data = "Description"; Value = "$($Item.Description)"; }
 				$ScriptInformation += @{ Data = "Parent"; Value = "$($Item.Parent)"; }
+				$ScriptInformation += @{ Data = "Children"; Value = "$($Item.Children)"; }
 				$ScriptInformation += @{ Data = "Snapshot time"; Value = "$($Item.SnapshotTime)"; }
 				$ScriptInformation += @{ Data = "Tags"; Value = "$($Item.Tags)"; }
 				$ScriptInformation += @{ Data = "Folder"; Value = "$($Item.Folder)"; }
@@ -8110,6 +8115,7 @@ Function OutputVMSnapshots
 				Line 3 "Name`t`t: " "$($Item.Name)"
 				Line 3 "Description`t: " "$($Item.Description)"
 				Line 3 "Parent`t`t: " "$($Item.Parent)"
+				Line 3 "Children`t`t: " "$($Item.Children)"
 				Line 3 "Snapshot time`t: " "$($Item.SnapshotTime)"
 				Line 3 "Tags`t`t: " "$($Item.Tags)"
 				Line 3 "Folder`t`t: " "$($Item.Folder)"
@@ -8121,6 +8127,7 @@ Function OutputVMSnapshots
 				$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), "$($Item.Name)", ($htmlsilver -bor $htmlbold))
 				$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), "$($Item.Description)", $htmlwhite))
 				$rowdata += @(, ("Parent", ($htmlsilver -bor $htmlbold), "$($Item.Parent)", $htmlwhite))
+				$rowdata += @(, ("Children", ($htmlsilver -bor $htmlbold), "$($Item.Children)", $htmlwhite))
 				$rowdata += @(, ("SnapshotTime", ($htmlsilver -bor $htmlbold), "$($Item.SnapshotTime)", $htmlwhite))
 				$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), "$($Item.Tags)", $htmlwhite))
 				$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), "$($Item.Folder)", $htmlwhite))
