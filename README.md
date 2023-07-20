@@ -14,7 +14,7 @@ If you want to test it, you must do whatever you do on GitHub to receive notific
 
 SYNOPSIS
 
-    Creates an inventory of a XenServer 8.2 Host or Pool.
+    Creates an inventory of a XenServer 8.2 Pool.
     
 SYNTAX
 
@@ -33,7 +33,7 @@ SYNTAX
 
 DESCRIPTION
 
-    Creates a complete inventory of a XenServer 8.2 Host or Pool using Microsoft
+    Creates a complete inventory of a XenServer 8.2 Pool using Microsoft
     Word, PDF, formatted text, HTML, and PowerShell.
 
     The script requires at least PowerShell version 4 but runs best in version 5.
@@ -41,7 +41,7 @@ DESCRIPTION
     Word is NOT needed to run the script. This script outputs in Text and HTML.
     The default output format is HTML.
 
-    Creates an output file named Hostname.<fileextension> or PoolName.<fileextension>.
+    Creates an output file named Poolname.<fileextension> or PoolName.<fileextension>.
 
     Word and PDF documents include a Cover Page, Table of Contents, and Footer.
     Includes support for the following language versions of Microsoft Word:
@@ -61,12 +61,12 @@ DESCRIPTION
 PARAMETERS
 
     -ServerName <String>
-        Specifies which XenServer Host or Pool to use to run the script against.
+        Specifies which XenServer Pool to use to run the script against.
 
         You can enter the ServerName as the NetBIOS name, FQDN, or IP Address.
 
         If entered as an IP address, the script attempts o determine and use the actual
-        computer name.
+        pool or poolmaster name.
 
         Required?                    true
         Position?                    named
@@ -98,7 +98,8 @@ PARAMETERS
 
     -Text [<SwitchParameter>]
         Creates a formatted text file with a .txt extension.
-
+        Text formatting is based on the default tab spacing of 8 by Microsoft Notepad.
+        
         This parameter is disabled by default.
 
         Required?                    false
