@@ -5,9 +5,9 @@
 
 <#
 .SYNOPSIS
-	Creates an inventory of a XenServer 8.2 Host or Pool.
+	Creates an inventory of a XenServer 8.2 Pool.
 .DESCRIPTION
-	Creates a complete inventory of a XenServer 8.2 Host or Pool using Microsoft 
+	Creates a complete inventory of a XenServer 8.2 Pool using Microsoft 
 	Word, PDF, formatted text, HTML, and PowerShell.
 	
 	The script requires at least PowerShell version 4 but runs best in version 5.
@@ -15,7 +15,7 @@
 	Word is NOT needed to run the script. This script outputs in Text and HTML.
 	The default output format is HTML.
 	
-	Creates an output file named Hostname.<fileextension> or PoolName.<fileextension>.
+	Creates an output file named Poolname.<fileextension> or PoolName.<fileextension>.
 	
 	Word and PDF documents include a Cover Page, Table of Contents, and Footer.
 	Includes support for the following language versions of Microsoft Word:
@@ -32,14 +32,14 @@
 		Swedish
 
 .PARAMETER ServerName
-	Specifies which XenServer Host or Pool to use to run the script against.
+	Specifies which XenServer Pool to use to run the script against.
 	
 	You can enter the ServerName as the NetBIOS name, FQDN, or IP Address.
 	
 	If entered as an IP address, the script attempts o determine and use the actual 
-    computer name.
+	pool or poolmaster name.
 .PARAMETER User
-	Username to use for the connection to the XenServer Host or Pool.
+	Username to use for the connection to the XenServer Pool.
 .PARAMETER HTML
 	Creates an HTML file with an .html extension.
 	
@@ -48,6 +48,7 @@
 	This parameter is set to True   If no other output format is selected.
 .PARAMETER Text
 	Creates a formatted text file with a .txt extension.
+	Text formatting is based on the default tab spacing of 8 by Microsoft Notepad.
 	
 	This parameter is disabled by default.
 .PARAMETER Folder
@@ -427,9 +428,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.007
+	VERSION: 0.008
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 17, 2023
+	LASTEDIT: July 20, 2023
 #>
 
 #endregion
@@ -540,6 +541,12 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.008
+#	Minor cleanup of console output (Webster)
+#	Minor updates to the HTML, Text, and MSWord/PDF output (Webster)
+#		In MSWord/PDF output, start 2nd+ Hosts and VMs on a new page (Webster)
+#	Updated the help text (Webster)
 #
 #.007
 #	Added data to the following Functions:
@@ -673,9 +680,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.007'
+$script:MyVersion = '0.008'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/19/2023"
+$tmpdate = [datetime] "07/20/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4131,7 +4138,7 @@ Function ProcessScriptEnd
 Function Get-CustomFields 
 {
 	Param([hashtable] $OtherConfig)
-	Write-Verbose "$(Get-Date -Format G): `tProcessing Custom Fields"
+	#Write-Verbose "$(Get-Date -Format G): `tProcessing Custom Fields" #write-verbose commented out by Webster
 	$CustomFields = New-Object System.Collections.ArrayList
 	ForEach ($Item in $OtherConfig.Keys)
 	{
@@ -4612,7 +4619,7 @@ Function OutputPoolEmailOptions
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 100;
+			$Table.Columns.Item(1).Width = 150;
 			$Table.Columns.Item(2).Width = 250;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -4628,7 +4635,7 @@ Function OutputPoolEmailOptions
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("100", "250")
+			$columnWidths = @("150", "250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -5398,9 +5405,11 @@ Function ProcessHosts
 		WriteHTMLLine 1 0 "Hosts"
 	}
 	
+	$HostFirst = $True
 	ForEach ($XSHost in $Script:XSHosts)
 	{
-		OutputHostGeneral $XSHost
+		Write-Verbose "$(Get-Date -Format G): `tOutput Host $($XSHost.name_label)"
+		OutputHostGeneral $XSHost $HostFirst
 		OutputHostCustomFields $XSHost
 		OutputHostAlerts $XSHost
 		OutputHostMultipathing $XSHost
@@ -5415,14 +5424,15 @@ Function ProcessHosts
 		OutputHostNetworking $XSHost
 		OutputHostNICs $XSHost
 		OutputHostGPU $XSHost
+		$HostFirst = $False
 	}
 }
 
 Function OutputHostGeneral
 {
-	Param([object]$XSHost)
+	Param([object]$XSHost, [bool]$HostFirst)
 	
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host $($XSHost.name_label) General"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host General"
 	
 	#is this host the pool master?
 	If ($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref)
@@ -5488,6 +5498,12 @@ Function OutputHostGeneral
 
 	If ($MSWord -or $PDF)
 	{
+		If($HostFirst -eq $False)
+		{
+			#Put the 2nd Host on, on a new page
+			$Selection.InsertNewPage()
+		}
+		
 		WriteWordLine 2 0 "Host: $($XSHost.name_label)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
@@ -5523,9 +5539,9 @@ Function OutputHostGeneral
 	}
 	If ($Text)
 	{
-		Line 1 "Name`t`t`t`t: " "$($XSHost.name_label)"
+		Line 1 "Name: " "$($XSHost.name_label)"
 		Line 2 "Description`t`t: " $XSHost.name_description
-		Line 1 "Tags`t`t`t`t: " "$($xtags -join ", ")"
+		Line 2 "Tags`t`t`t: " "$($xtags -join ", ")"
 		Line 2 "Pool master`t`t: " $IAmThePoolMaster
 		Line 2 "Folder`t`t`t: " $folderName
 		Line 2 "Enabled`t`t`t: " $XSHost.enabled.ToString()
@@ -5572,7 +5588,7 @@ Function OutputHostGeneral
 Function OutputHostCustomFields
 {
 	Param([object] $XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Custom Fields"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Custom Fields"
 
 	$CustomFields = Get-CustomFields $($XSHost.other_config)
 	
@@ -5706,7 +5722,7 @@ Function OutputHostPowerOn
 	#wake-on-lan is Wake-on-LAN (WoL)
 	#Otherwise, power_on_mode is Custom power-on script /etc/xapi.d/plugins/<value of power_on_mode>
 	
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Power On"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Power On"
 
 	If ($MSWord -or $PDF)
 	{
@@ -5954,7 +5970,7 @@ Function OutputHostPowerOn
 function OutputHostLicense
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host License Details"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host License Details"
 
 	$licenseExpiryDate = [datetime]::parseexact($XSHost.license_params["expiry"], "yyyyMMddTHH:mm:ssZ", $([cultureinfo]::InvariantCulture))
 	If (($XSHost.license_server["address"] -like "localhost") -or ([String]::IsNullOrEmpty($($XSHost.license_params["license_type"]))) -or ($licenseExpiryDate -lt (Get-Date).AddDays(30)))
@@ -5965,8 +5981,6 @@ function OutputHostLicense
 	{
 		$licenseStatus = "Licensed"
 	} 
-
-
 
 	If ($MSWord -or $PDF)
 	{
@@ -5984,7 +5998,6 @@ function OutputHostLicense
 	If ($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-
 	}
 	If ($Text)
 	{
@@ -6029,8 +6042,8 @@ function OutputHostLicense
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-		$Table.Columns.Item(1).Width = 175;
-		$Table.Columns.Item(2).Width = 175;
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -6045,7 +6058,7 @@ function OutputHostLicense
 	If ($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("175", "175")
+		$columnWidths = @("150", "200")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
@@ -6055,7 +6068,7 @@ function OutputHostLicense
 Function OutputHostVersion
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Version Details"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Version Details"
 
 	If ($MSWord -or $PDF)
 	{
@@ -6112,7 +6125,7 @@ Function OutputHostVersion
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(1).Width = 150;
 		$Table.Columns.Item(2).Width = 150;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -6128,7 +6141,7 @@ Function OutputHostVersion
 	If ($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("100", "150")
+		$columnWidths = @("150", "150")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
@@ -6138,7 +6151,7 @@ Function OutputHostVersion
 Function OutputHostManagement
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Management Interface"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Management Interface"
 
 	$mPifs = $XSHost.PIFs | Get-XenPIF -EA 0 | Where-Object { $_.management }
 	$managementIPs = @()
@@ -6236,7 +6249,7 @@ Function OutputHostManagement
 Function OutputHostMemory
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Memory"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Memory"
 
 	$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
 	$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
@@ -6356,7 +6369,7 @@ Function OutputHostMemory
 Function OutputHostCPUs
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host CPUs"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host CPUs"
 
 	$hostCPUCount = '0 - {0}' -f $($XSHost.cpu_info["cpu_count"] - 1)
 	$hostCPUInfo = @()
@@ -6427,7 +6440,7 @@ Function OutputHostCPUs
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 	
-		$Table.Columns.Item(1).Width = 75;
+		$Table.Columns.Item(1).Width = 150;
 		$Table.Columns.Item(2).Width = 200;
 	
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -6443,7 +6456,7 @@ Function OutputHostCPUs
 	If ($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("75", "300")
+		$columnWidths = @("150", "300")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
@@ -6453,7 +6466,7 @@ Function OutputHostCPUs
 Function OutputHostStorage
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Storage"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Storage"
 
 	$XSHostName = $XSHost.Name_Label
 	$pbds = $XSHost.PBDs | Get-XenPBD
@@ -6538,7 +6551,8 @@ Function OutputHostStorage
 		}
 		If ($Text)
 		{
-			Line 3 "Number of storages : " "$storageCount"
+			Line 3 "Number of storages: " "$storageCount"
+			Line 0 ""
 		}
 		If ($HTML)
 		{
@@ -6560,7 +6574,7 @@ Function OutputHostStorage
 			}
 			If ($Text)
 			{
-				Line 3 "Name`t`t`t: " $($item.Name)
+				Line 3 "Name: " $($item.Name)
 				Line 4 "Description`t`t: " $($item.Description)
 				Line 4 "Type`t`t`t: " $($item.Type)
 				Line 4 "Shared`t`t`t: " $($item.Shared)
@@ -6620,7 +6634,7 @@ Function OutputHostStorage
 Function OutputHostNetworking
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host Networking"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Networking"
 
 	$XSHostName = $XSHost.Name_Label
 	$XSNetworks = @(Get-XenNetwork | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
@@ -6754,6 +6768,7 @@ Function OutputHostNetworking
 				Line 4 "Link Status`t: " $($item.LinkStatus)
 				Line 4 "MAC`t`t: " $($item.MAC)
 				Line 4 "MTU`t`t: " $($item.MTU)
+				Line 0 ""
 			}
 			If ($HTML)
 			{
@@ -6779,7 +6794,7 @@ Function OutputHostNetworking
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 125;
+			$Table.Columns.Item(1).Width = 150;
 			$Table.Columns.Item(2).Width = 175;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -6805,7 +6820,7 @@ Function OutputHostNetworking
 Function OutputHostNICs
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host NICs"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host NICs"
 
 	$XSNICSs = @($XSHost.PIFs | Get-XenPIF | Where-Object { $_.physical -like $true -or -Not [String]::IsNullOrEmpty($_.bond_master_of) } | Sort-Object -Property device)
 	$XSHostName = $XSHost.Name_Label
@@ -6938,6 +6953,7 @@ Function OutputHostNICs
 				Line 4 "PCI Bus Path`t: " $($item.PCIBusPath)
 				Line 4 "FCoE Capable`t: " $($item.FCoE)
 				Line 4 "SR-IOV Capable`t: " $($item.SRIOV)
+				Line 0 ""
 			}
 			If ($HTML)
 			{
@@ -6965,7 +6981,7 @@ Function OutputHostNICs
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 175;
+			$Table.Columns.Item(1).Width = 150;
 			$Table.Columns.Item(2).Width = 250;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -6981,7 +6997,7 @@ Function OutputHostNICs
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("175", "250")
+			$columnWidths = @("150", "250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -6992,7 +7008,7 @@ Function OutputHostNICs
 Function OutputHostGPU
 {
 	Param([object]$XSHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput Host GPU"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host GPU"
 	$pGPUs = @($XSHost.PGPUs | Get-XenPGPU)
 	$XSHostName = $XSHost.Name_Label
 	$nrGPUs = $pGPUs.Count
@@ -7092,6 +7108,7 @@ Function OutputHostGPU
 				Line 3 "vGPU allocation`t`t`t: " $($allocation)
 				Line 3 "Primary host display adapter`t: " $($primaryAdapter)
 				Line 3 "vGPU profiles`t`t`t: " $($gpuTypesText)
+				Line 0 ""
 			}
 			If ($HTML)
 			{
@@ -7158,8 +7175,10 @@ Function ProcessVMs
 		WriteHTMLLine 1 0 "Virtual Machines"
 	}
 	
+	$VMFirst = $True
 	ForEach ($VMName in $Script:VMNames)
 	{
+		Write-Verbose "$(Get-Date -Format G): `tOutput VM $($VMName.name_label)"
 		$VM = Get-XenVM -Name $VMName.name_label
 		$VMMetrics = $VM.guest_metrics | Get-XenVMGuestMetrics
 		if ([String]::IsNullOrEmpty($VMMetrics) -or [String]::IsNullOrEmpty($($VMMetrics.os_version)) -or $VMMetrics.os_version.Count -lt 1 -or [String]::IsNullOrEmpty($($VMMetrics.os_version.name)))
@@ -7205,19 +7224,20 @@ Function ProcessVMs
 				$VMHost = "N/A"
 			}
 		}#>
-		OutputVM $VM $VMOSName $VMHost
+		OutputVM $VM $VMOSName $VMHost $VMFirst
 		OutputVMStorage $VM $VMHost
 		OutputVMNIC $VM
 		OutputVMGPU $VM
 		OutputVMCustomFields $VM
+		$VMFirst = $False
 	}
 }
 
 Function OutputVM
 {
-	Param([object]$VM, [string]$VMOSName, [string]$VMHost)
+	Param([object]$VM, [string]$VMOSName, [string]$VMHost, [bool]$VMFirst)
 	
-	Write-Verbose "$(Get-Date -Format G): `tProcessing VM $($VM.name_label)"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General"
 	If ($VMOSName -ne "N/A")
 	{
 		#remove the pipe symbol from the $VMOSName variable
@@ -7284,6 +7304,12 @@ Function OutputVM
 
 	If ($MSWord -or $PDF)
 	{
+		If($VMFirst -eq $False)
+		{
+			#Put the 2nd VM on, on a new page
+			$Selection.InsertNewPage()
+		}
+		
 		WriteWordLine 2 0 "VM: $($VM.name_label)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "VM name"; Value = $($VM.name_label); }
@@ -7314,7 +7340,7 @@ Function OutputVM
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-		$Table.Columns.Item(1).Width = 200;
+		$Table.Columns.Item(1).Width = 150;
 		$Table.Columns.Item(2).Width = 250;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -7370,7 +7396,7 @@ Function OutputVM
 		$rowdata += @(, ('Secure boot', ($htmlsilver -bor $htmlbold), $xenVMSecureBoot, $htmlwhite))
 
 		$msg = ""
-		$columnWidths = @("200", "250")
+		$columnWidths = @("150", "250")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
@@ -7380,7 +7406,7 @@ Function OutputVM
 Function OutputVMStorage
 {
 	Param([object]$VM, [string]$VMHost)
-	Write-Verbose "$(Get-Date -Format G): `tOutput VM Storage"
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Storage"
 	$VMName = $VM.Name_Label
 	$vbds = $Vm.VBDs | Get-XenVBD
 	
@@ -7466,7 +7492,7 @@ Function OutputVMStorage
 		}
 		If ($Text)
 		{
-			Line 3 "Number of storages`t`t: " "$storageCount"
+			Line 3 "Number of storages: " "$storageCount"
 		}
 		If ($HTML)
 		{
@@ -7526,8 +7552,8 @@ Function OutputVMStorage
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
-			$Table.Columns.Item(2).Width = 400;
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -7542,7 +7568,7 @@ Function OutputVMStorage
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("200", "400")
+			$columnWidths = @("150", "350")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -7645,7 +7671,7 @@ Function OutputVMGPU
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(1).Width = 150;
 			$Table.Columns.Item(2).Width = 250;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -7661,7 +7687,7 @@ Function OutputVMGPU
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("200", "250")
+			$columnWidths = @("150", "250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -7828,7 +7854,7 @@ Function OutputVMNIC
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 175;
+			$Table.Columns.Item(1).Width = 150;
 			$Table.Columns.Item(2).Width = 250;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -7844,7 +7870,7 @@ Function OutputVMNIC
 		If ($HTML)
 		{
 			$msg = ""
-			$columnWidths = @("175", "250")
+			$columnWidths = @("150", "250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
