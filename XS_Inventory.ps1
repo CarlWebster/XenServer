@@ -547,6 +547,8 @@ Param(
 #	Minor updates to the HTML, Text, and MSWord/PDF output (Webster)
 #		In MSWord/PDF output, start 2nd+ Hosts and VMs on a new page (Webster)
 #	Updated the help text (Webster)
+#	Added the following Functions:
+#       OutputVMSnapshots (JohnB)
 #
 #.007
 #	Added data to the following Functions:
@@ -620,6 +622,7 @@ Param(
 #.001 - initial version create from the May 2015 attempt
 #endregion
 
+#region basics
 Function AbortScript
 {
 	If ($MSWord -or $PDF)
@@ -2818,7 +2821,8 @@ Function SetupHTML
 
 	$htmlhead = "<html><head><meta http-equiv='Content-Language' content='da'><title>" + $Script:Title + "</title></head><body>"
 	Out-File -FilePath $Script:HtmlFileName -Force -InputObject $HTMLHead 4>$Null
-}#endregion
+}
+#endregion
 
 #region Iain's Word table functions
 
@@ -4133,9 +4137,9 @@ Function ProcessScriptEnd
 }
 #endregion
 
-#region Functions
+#region XS Specific Functions
 
-Function Get-CustomFields 
+Function Get-XSCustomFields 
 {
 	Param([hashtable] $OtherConfig)
 	#Write-Verbose "$(Get-Date -Format G): `tProcessing Custom Fields" #write-verbose commented out by Webster
@@ -4358,7 +4362,7 @@ Function OutputPoolCustomFields
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Custom Fields"
 
-	$CustomFields = Get-CustomFields $($Script:XSPool.other_config)
+	$CustomFields = Get-XSCustomFields $($Script:XSPool.other_config)
 
 	If ($MSWord -or $PDF)
 	{
@@ -5498,7 +5502,7 @@ Function OutputHostGeneral
 
 	If ($MSWord -or $PDF)
 	{
-		If($HostFirst -eq $False)
+		If ($HostFirst -eq $False)
 		{
 			#Put the 2nd Host on, on a new page
 			$Selection.InsertNewPage()
@@ -5590,7 +5594,7 @@ Function OutputHostCustomFields
 	Param([object] $XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Custom Fields"
 
-	$CustomFields = Get-CustomFields $($XSHost.other_config)
+	$CustomFields = Get-XSCustomFields $($XSHost.other_config)
 	
 	If ($MSWord -or $PDF)
 	{
@@ -7229,6 +7233,7 @@ Function ProcessVMs
 		OutputVMNIC $VM
 		OutputVMGPU $VM
 		OutputVMCustomFields $VM
+		OutputVMSnapshots $VM
 		$VMFirst = $False
 	}
 }
@@ -7304,7 +7309,7 @@ Function OutputVM
 
 	If ($MSWord -or $PDF)
 	{
-		If($VMFirst -eq $False)
+		If ($VMFirst -eq $False)
 		{
 			#Put the 2nd VM on, on a new page
 			$Selection.InsertNewPage()
@@ -7411,9 +7416,9 @@ Function OutputVMStorage
 	$vbds = $Vm.VBDs | Get-XenVBD
 	
 	$storages = @()
-	ForEach ($item in $($vbds | Where-Object {$_.type -ne "CD"} | Sort-Object -Property userdevice))
+	ForEach ($item in $($vbds | Where-Object { $_.type -ne "CD" } | Sort-Object -Property userdevice))
 	{
-		$vdi = $item.VDI | Get-XenVDI | Where-Object {$_.is_a_snapshot -like $false}
+		$vdi = $item.VDI | Get-XenVDI | Where-Object { $_.is_a_snapshot -like $false }
 		$sr = $vdi.SR | Get-XenSR
 		If ($vdi.read_only -like $true)
 		{
@@ -7576,8 +7581,6 @@ Function OutputVMStorage
 
 
 }
-
-
 
 Function OutputVMGPU
 {
@@ -7882,7 +7885,7 @@ Function OutputVMCustomFields
 	Param([object] $VM)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Custom Fields"
 
-	$CustomFields = $CustomFields = Get-CustomFields $($vm.other_config)
+	$CustomFields = $CustomFields = Get-XSCustomFields $($vm.other_config)
 	
 	If ($MSWord -or $PDF)
 	{
@@ -7988,6 +7991,238 @@ Function OutputVMCustomFields
 		}
 	}
 }
+
+Function OutputVMSnapshots
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Snapshots"
+
+	$xenVMs = $vm.VBDs | Get-XenVBD | Where-Object { $_.type -like "Disk" } | Select-Object -ExpandProperty VDI | Get-XenVDI | Select-Object -ExpandProperty snapshots | Get-XenVDI | Select-Object -ExpandProperty VBDs | Get-XenVBD | Select-Object -ExpandProperty VM | Get-XenVM | Sort-Object snapshot_time, uuid -Unique
+
+	$snapshots = @()
+	ForEach ($item in $xenVMs)
+	{
+		if ($vm.opaque_ref -eq $item.parent.opaque_ref)
+		{
+			$parent = $($vm.name_label)
+		}
+		else
+		{
+			$parentVM = $xenVMs | Where-Object { $_.opaque_ref -eq $item.parent.opaque_ref } | Select-Object name_label
+			if ($null -ne $parentVM)
+			{
+				$parent = $parentVM.name_label
+			}
+			else
+			{
+				$parent = "<self>"
+			}
+		}
+		$snapshotDateTime = $($item.snapshot_time -as [datetime]).ToLocalTime()
+		$snapshotDateTimeValue = '{0} {1}' -f $snapshotDateTime.ToLongDateString(), $snapshotDateTime.ToLongTimeString()
+		$snapshots += $item | Select-Object -Property `
+		@{Name = 'Name'; Expression = { $_.name_label } },
+		@{Name = 'Description'; Expression = { $_.name_description } },
+		@{Name = 'Parent'; Expression = { $parent } },
+		@{Name = 'SnapshotTime'; Expression = { $snapshotDateTimeValue } },
+		@{Name = 'Tags'; Expression = { $item.tags -join ", " } },
+		@{Name = 'Folder'; Expression = { $item.other_config["folder"] } },
+		@{Name = 'CustomFields'; Expression = { Get-XSCustomFields $item.other_config } }
+	}
+	
+	$nrSnapshots = $snapshots.Count
+	$VMName = $VM.Name_Label
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Snapshots"
+	}
+	If ($Text)
+	{
+		Line 2 "Snapshots"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Snapshots"
+	}
+
+	If ($nrSnapshots -lt 1)
+	{
+
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no snapshots configured for VM $VMName"
+		}
+		If ($Text)
+		{
+			Line 3 "There are no snapshots configured for VM $VMName"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no snapshots configured for VM $VMName"
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+		}
+		If ($Text)
+		{
+			
+		}
+		If ($HTML)
+		{
+		}
+
+		ForEach ($Item in $snapshots)
+		{
+			If ($MSWord -or $PDF)
+			{
+				[System.Collections.Hashtable[]] $ScriptInformation = @()
+				$ScriptInformation += @{ Data = "Name"; Value = "$($Item.Name)"; }
+				$ScriptInformation += @{ Data = "Description"; Value = "$($Item.Description)"; }
+				$ScriptInformation += @{ Data = "Parent"; Value = "$($Item.Parent)"; }
+				$ScriptInformation += @{ Data = "Snapshot time"; Value = "$($Item.SnapshotTime)"; }
+				$ScriptInformation += @{ Data = "Tags"; Value = "$($Item.Tags)"; }
+				$ScriptInformation += @{ Data = "Folder"; Value = "$($Item.Folder)"; }
+				$Table = AddWordTable -Hashtable $ScriptInformation `
+					-Columns Data, Value `
+					-List `
+					-Format $wdTableGrid `
+					-AutoFit $wdAutoFitFixed;
+
+				## IB - Set the header row format
+				SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+				$Table.Columns.Item(1).Width = 100;
+				$Table.Columns.Item(2).Width = 200;
+
+				$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+				FindWordDocumentEnd
+				$Table = $Null
+				WriteWordLine 0 0 ""
+			}
+			If ($Text)
+			{
+				Line 3 "Name`t`t: " "$($Item.Name)"
+				Line 3 "Description`t: " "$($Item.Description)"
+				Line 3 "Parent`t`t: " "$($Item.Parent)"
+				Line 3 "Snapshot time`t: " "$($Item.SnapshotTime)"
+				Line 3 "Tags`t`t: " "$($Item.Tags)"
+				Line 3 "Folder`t`t: " "$($Item.Folder)"
+				Line 0 ""
+			}
+			If ($HTML)
+			{
+				$rowdata = @()
+				$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), "$($Item.Name)", ($htmlsilver -bor $htmlbold))
+				$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), "$($Item.Description)", $htmlwhite))
+				$rowdata += @(, ("Parent", ($htmlsilver -bor $htmlbold), "$($Item.Parent)", $htmlwhite))
+				$rowdata += @(, ("SnapshotTime", ($htmlsilver -bor $htmlbold), "$($Item.SnapshotTime)", $htmlwhite))
+				$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), "$($Item.Tags)", $htmlwhite))
+				$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), "$($Item.Folder)", $htmlwhite))
+				$msg = ""
+				$columnWidths = @("100", "250")
+				FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+				WriteHTMLLine 0 0 ""
+			}
+			If (($item.CustomFields | Measure-Object | Select-Object -ExpandProperty Count) -lt 1)
+			{
+				If ($MSWord -or $PDF)
+				{
+					WriteWordLine 0 1 "There are no Custom Fields specified for $($Item.Name)"
+					WriteWordLine 0 0 ""
+				}
+				If ($Text)
+				{
+					Line 3 "There are no Custom Fields specified for $($Item.Name)"
+					Line 0 ""
+				}
+				If ($HTML)
+				{
+					WriteHTMLLine 0 1 "There are no Custom Fields specified for $($Item.Name)"
+				}
+	
+			}
+			Else
+			{
+				If ($MSWord -or $PDF)
+				{
+					WriteWordLine 0 1 "Custom Fields for snapshot $($Item.Name)"
+					WriteWordLine 0 0 ""
+					[System.Collections.Hashtable[]] $ScriptInformation = @()
+					$ScriptInformation += @{ Data = "Name"; Value = "Value"; }
+				}
+				If ($Text)
+				{
+					Line 3 "Custom Fields for snapshot $($Item.Name)"
+					Line 0 ""
+					Line 3 "Name`t`t: " "Value"
+				}
+				If ($HTML)
+				{
+					WriteHTMLLine 0 1 "Custom Fields for snapshot $($Item.Name)"
+					$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), "Value", ($htmlsilver -bor $htmlbold))
+					$rowdata = @()
+				}
+
+				foreach ($customfield in $item.CustomFields)
+				{
+					If ($MSWord -or $PDF)
+					{
+	
+						$ScriptInformation += @{ Data = "$($customfield.Name)"; Value = "$($customfield.Value)"; }
+					}
+					If ($Text)
+					{
+						Line 3 "$($customfield.Name)`t: " "$($customfield.Value)"
+					}
+					If ($HTML)
+					{
+						$rowdata += @(, ("$($customfield.Name)", ($htmlsilver -bor $htmlbold), "$($customfield.Value)", $htmlwhite))
+					}
+				}
+
+				If ($MSWord -or $PDF)
+				{
+					$Table = AddWordTable -Hashtable $ScriptInformation `
+						-Columns Data, Value `
+						-List `
+						-Format $wdTableGrid `
+						-AutoFit $wdAutoFitFixed;
+	
+					## IB - Set the header row format
+					SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+	
+					$Table.Columns.Item(1).Width = 150;
+					$Table.Columns.Item(2).Width = 250;
+	
+					$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+	
+					FindWordDocumentEnd
+					$Table = $Null
+					WriteWordLine 0 0 ""
+				}
+				If ($Text)
+				{
+					Line 0 ""
+				}
+				If ($HTML)
+				{
+					$msg = ""
+					$columnWidths = @("200", "300")
+					FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+					WriteHTMLLine 0 0 ""
+				}
+	
+			}
+		}
+	}
+}
+
 #endregion
 
 #region script core
