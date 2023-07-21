@@ -7,15 +7,15 @@
 .SYNOPSIS
 	Creates an inventory of a XenServer 8.2 Pool.
 .DESCRIPTION
-	Creates a complete inventory of a XenServer 8.2 Pool using Microsoft 
-	Word, PDF, formatted text, HTML, and PowerShell.
+	Creates a complete inventory of a XenServer 8.2 Pool using Microsoft Word, PDF, formatted 
+	text, HTML, and PowerShell.
 	
 	The script requires at least PowerShell version 4 but runs best in version 5.
 
 	Word is NOT needed to run the script. This script outputs in Text and HTML.
 	The default output format is HTML.
 	
-	Creates an output file named Poolname.<fileextension> or PoolName.<fileextension>.
+	Creates an output file named Poolname.<fileextension>.
 	
 	Word and PDF documents include a Cover Page, Table of Contents, and Footer.
 	Includes support for the following language versions of Microsoft Word:
@@ -430,7 +430,7 @@
 	NAME: XS_Inventory.ps1
 	VERSION: 0.008
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 20, 2023
+	LASTEDIT: July 21, 2023
 #>
 
 #endregion
@@ -685,7 +685,7 @@ $Error.Clear()
 $Script:emailCredentials = $Null
 $script:MyVersion = '0.008'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/20/2023"
+$tmpdate = [datetime] "07/21/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4340,11 +4340,14 @@ Function OutputPoolGeneral
 	}
 	If ($HTML)
 	{
+		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
+		$xtags = $xtags.Trim("<",">")
+		$folderName = $folderName.Trim("<",">")
 		WriteHTMLLine 2 0 "General"
 		$rowdata = @()
 		$columnHeaders = @("Pool name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
-		$rowdata += @(, ('UUID', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $folderName, $htmlwhite))
 		$rowdata += @(, ('Pool License', ($htmlsilver -bor $htmlbold), $PoolLicense, $htmlwhite))
 		$rowdata += @(, ('Number of Sockets', ($htmlsilver -bor $htmlbold), $NumSockets, $htmlwhite))
@@ -4711,6 +4714,8 @@ Function OutputPoolPowerOn
 				If ($cnt -eq 0)
 				{
 					$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($XSHost.Name_Label)", $htmlwhite)
+					$rowdata += @(, ("    Power On mode", ($htmlsilver -bor $htmlbold), "Disabled", $htmlwhite))
+					$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
 				}
 				Else
 				{
@@ -5295,7 +5300,7 @@ Function OutputPoolManagementInterfaces
 
 			SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(1).Width = 250;
 			$Table.Columns.Item(2).Width = 100;
 			
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -5490,6 +5495,7 @@ Function OutputHostGeneral
 		$AgentUptime.Days,
 		$AgentUptime.Hours,
 		$AgentUptime.Minutes)
+
 	If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
 	{
 		$folderName = "None"
@@ -5499,7 +5505,15 @@ Function OutputHostGeneral
 		$folderName = $XSHost.Other_Config["folder"]
 	}
 
-
+	If($XSHost.name_description -eq "Default install")
+	{
+		$XSHostDescription = "Default install of Citrix Hypervisor"
+	}
+	ELse
+	{
+		$XSHostDescription = $XSHost.name_description
+	}
+	
 	If ($MSWord -or $PDF)
 	{
 		If ($HostFirst -eq $False)
@@ -5511,7 +5525,7 @@ Function OutputHostGeneral
 		WriteWordLine 2 0 "Host: $($XSHost.name_label)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
-		$ScriptInformation += @{ Data = "Description"; Value = $XSHost.name_description; }
+		$ScriptInformation += @{ Data = "Description"; Value = $XSHostDescription; }
 		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", "); }
 		$ScriptInformation += @{ Data = "Pool master"; Value = $IAmThePoolMaster; }
 		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
@@ -5544,7 +5558,7 @@ Function OutputHostGeneral
 	If ($Text)
 	{
 		Line 1 "Name: " "$($XSHost.name_label)"
-		Line 2 "Description`t`t: " $XSHost.name_description
+		Line 2 "Description`t`t: " $XSHostDescription
 		Line 2 "Tags`t`t`t: " "$($xtags -join ", ")"
 		Line 2 "Pool master`t`t: " $IAmThePoolMaster
 		Line 2 "Folder`t`t`t: " $folderName
@@ -5562,10 +5576,13 @@ Function OutputHostGeneral
 	}
 	If ($HTML)
 	{
+		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
+		$xtags = $xtags.Trim("<",">")
+		$folderName = $folderName.Trim("<",">")
 		WriteHTMLLine 2 0 "Host: $($XSHost.name_label)"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $XSHost.name_label, $htmlwhite)
-		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $XSHost.name_description, $htmlwhite))
+		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $XSHostDescription, $htmlwhite))
 		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Pool master', ($htmlsilver -bor $htmlbold), $IAmThePoolMaster, $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), "$folderName", $htmlwhite))
@@ -5751,11 +5768,11 @@ Function OutputHostPowerOn
 		If ($MSWord -or $PDF)
 		{
 			$ScriptInformation += @{ Data = "Server"; Value = "$($XSHost.Name_Label)"; }
-			$ScriptInformation += @{ Data = "Power On mode"; Value = "Disabled"; }
+			$ScriptInformation += @{ Data = "     Power On mode"; Value = "Disabled"; }
 		}
 		If ($Text)
 		{
-			Line 3 "Server`t`t`t: " "$($XSHost.Name_Label)"
+			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
 			Line 3 "Power On mode`t: " "Disabled"
 		}
 		If ($HTML)
@@ -5764,6 +5781,7 @@ Function OutputHostPowerOn
 			{
 				$cnt++
 				$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($XSHost.Name_Label)", $htmlwhite)
+				$rowdata += @(, ("    Power On mode", ($htmlsilver -bor $htmlbold), "Disabled", $htmlwhite))
 			}
 			Else
 			{
@@ -6062,7 +6080,7 @@ function OutputHostLicense
 	If ($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("150", "200")
+		$columnWidths = @("150", "250")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
