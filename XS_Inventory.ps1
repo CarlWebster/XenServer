@@ -428,9 +428,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.008
+	VERSION: 0.009
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 21, 2023
+	LASTEDIT: July 22, 2023
 #>
 
 #endregion
@@ -541,6 +541,10 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.009
+#	Add output to Function OutputHostAlerts (Webster)
+#	Add output to Function OutputHostLogDestination (Webster)
 #
 #.008
 #	Minor cleanup of console output (Webster)
@@ -683,9 +687,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.008'
+$script:MyVersion = '0.009'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/21/2023"
+$tmpdate = [datetime] "07/22/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4138,7 +4142,6 @@ Function ProcessScriptEnd
 #endregion
 
 #region XS Specific Functions
-
 Function Get-XSCustomFields 
 {
 	Param([hashtable] $OtherConfig)
@@ -5602,7 +5605,6 @@ Function OutputHostGeneral
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLIne 0 0 ""
 	}
-	
 }
 
 
@@ -5721,6 +5723,287 @@ Function OutputHostCustomFields
 Function OutputHostAlerts
 {
 	Param([object]$XSHost)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Alerts"
+	
+	<#
+		On the host's Properties, Alerts, there are five items:
+		
+		Alert repeat interval: nn minutes - This is found in the host's properties for each key/value pair
+		
+		Generate CPU usage alerts - These are found in the host's properties. If exists, enabled else disabled
+			When CPU usage exceeds nn %
+			For longer than nn minutes
+			
+		Generate network usage alerts - These are found in the host's properties. If exists, enabled else disabled
+			When network usage exceeds nnn KB/s
+			For longer than nn minutes
+			
+		Generate memory usage alerts - These are found in the host's properties. If exists, enabled else disabled
+			When free memory falls below nnnn MB
+			For longer than nn minutes
+		
+		Generate control domain memory usage alerts - These are found in Dom 0's VM properties. If exists, enabled else disabled
+			When control domain memory usage exceeds nn %
+			For longer than nn minutes
+
+		To get Dom 0's properties:
+		$Session = Connect-XenServer -server 192.168.1.82 -SetDefaultSession -NoWarnCertificates -PassThru
+		$dom0conf = Get-XenVm | `
+		Where-Object {$_.is_control_domain -and $_.domid -eq 0 -and $_.name_label -like "*$($XSHost.hostname)*"} | `
+		Get-XenVmProperty -XenProperty OtherConfig
+		[xml]$XML = $dom0conf.perfmon
+		ForEach($Alert in $XML.config.variable)
+		{
+			"Alert Name: $($Alert.Name.Value)"	#mem_usage
+			"Trigger level: $($Alert.alarm_trigger_level.Value)"
+			"Trigger period: $($Alert.alarm_trigger_period.Value)"
+			"Inhibit period: $($Alert.alarm_auto_inhibit_period.value)"
+		}
+
+		To get the host's alert properties:
+		$OtherConfig = ($XSHost | Get-XenHostProperty -XenProperty OtherConfig -EA 0)
+		[xml]$XML = $OtherConfig.perfmon
+			
+		ForEach($Alert in $XML.config.variable)
+		{
+			"Host: $($XSHost.name_label)"
+			"Alert Name: $($Alert.Name.Value)"
+			"Trigger level: $($Alert.alarm_trigger_level.Value)"
+			"Trigger period: $($Alert.alarm_trigger_period.Value)"
+			"Inhibit period: $($Alert.alarm_auto_inhibit_period.value)"
+		}
+
+		Alert Name: mem_usage Trigger level: 0.9 Trigger period: 120 Inhibit period: 3900
+		Alert Name: mem_usage Trigger level: 0.95 Trigger period: 240 Inhibit period: 1800
+		Host: XenServer2 (82) - Alert Name: cpu_usage Trigger level: 0.5 Trigger period: 60 Inhibit period: 1800
+		Host: XenServer2 (82) - Alert Name: network_usage Trigger level: 102400 Trigger period: 120 Inhibit period: 1800
+		Host: XenServer2 (82) - Alert Name: memory_free_kib Trigger level: 1024000 Trigger period: 180 Inhibit period: 1800
+
+		cpu_usage 0.5 60 60 #cpu_usage is Generate CPU usage alerts, .5 is When CPU usage exceeds: 50%, 60 is For longer than 1 minutes
+		network_usage 102400 120 120 #network_usage is Generate network usage alerts, 102400 is When network usage exceeds 100 KB/s, 120 is For longer than 2 minutes
+		memory_free_kib 1024000 180 180 #memory_free_kib is Generate memory usage alerts, 1024000 is When free memory falls below 1000 MB, 180 is For longer than 3 minutes
+	#>
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Alerts"
+	}
+	If ($Text)
+	{
+		Line 2 "Alerts"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Alerts"
+	}
+
+	[int32]$AlertRepeatInterval      = 0
+	$GenerateDom0MemUsageAlerts      = "Not selected"
+	[double]$WhenDom0MemUsageExceeds = 0
+	[int32]$WhenDom0ForLongerThan    = 0
+	
+	$dom0conf = Get-XenVm | `
+	Where-Object {$_.is_control_domain -and $_.domid -eq 0 -and $_.name_label -like "*$($XSHost.hostname)*"} | `
+	Get-XenVmProperty -XenProperty OtherConfig
+	[xml]$XML = $dom0conf.perfmon
+
+	ForEach($Alert in $XML.config.variable)
+	{
+		If($Alert.Name.Value -eq "mem_usage")
+		{
+			$GenerateDom0MemUsageAlerts = "Selected"
+			[double]$tmp                = $Alert.alarm_trigger_level.Value
+			$WhenDom0MemUsageExceeds    = $tmp * 100
+			$WhenDom0ForLongerThan      = $Alert.alarm_trigger_period.Value / 60
+		}
+	}
+	
+	$GenerateHostCPUUsageAlerts          = "Not selected"
+	[double]$WhenHostCPUUsageExceeds     = 0
+	[int32]$WhenHostCPUForLongerThan     = 0
+
+	$GenerateHostNetworkUsageAlerts      = "Not selected"
+	[int32]$WhenHostNetworkUsageExceeds  = 0
+	[int32]$WhenHostNetworkForLongerThan = 0
+
+	$GenerateHostMemoryUsageAlerts       = "Not selected"
+	[int32]$WhenHostMemUsageExceeds      = 0
+	[int32]$WhenHostMemForLongerThan     = 0
+
+	$OtherConfig = ($XSHost | Get-XenHostProperty -XenProperty OtherConfig -EA 0)
+	
+	If($OtherConfig.ContainsKey("perfmon"))
+	{
+		[xml]$XML = $OtherConfig.perfmon
+			
+		ForEach($Alert in $XML.config.variable)
+		{
+			If($Alert.Name.Value -eq "cpu_usage")
+			{
+				$GenerateHostCPUUsageAlerts = "Selected"
+				[double]$tmp                = $Alert.alarm_trigger_level.Value
+				$WhenHostCPUUsageExceeds    = $tmp * 100
+				$WhenHostCPUForLongerThan   = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval        = $Alert.alarm_auto_inhibit_period.Value / 60
+			}
+			ElseIf($Alert.Name.Value -eq "network_usage")
+			{
+				$GenerateHostNetworkUsageAlerts = "Selected"
+				$WhenHostNetworkUsageExceeds    = $Alert.alarm_trigger_level.Value / 1024
+				$WhenHostNetworkForLongerThan   = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval        = $Alert.alarm_auto_inhibit_period.Value / 60
+			}
+			ElseIf($Alert.Name.Value -eq "memory_free_kib")
+			{
+				$GenerateHostMemoryUsageAlerts = "Selected"
+				$WhenHostMemUsageExceeds       = $Alert.alarm_trigger_level.Value / 1024
+				$WhenHostMemForLongerThan      = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval        = $Alert.alarm_auto_inhibit_period.Value / 60
+			}
+		}
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		If($GenerateHostCPUUsageAlerts -eq "Selected" -or
+		   $GenerateHostNetworkUsageAlerts -eq "Selected" -or
+		   $GenerateHostMemoryUsageAlerts -eq "Selected" -or
+		   $GenerateDom0MemUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "$($AlertRepeatInterval) minutes"; }
+		}
+		Else
+		{
+			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "Not Set"; }
+		}
+		$ScriptInformation += @{ Data = "Generate CPU usage alerts"; Value = $GenerateHostCPUUsageAlerts; }
+		If($GenerateHostCPUUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "     When CPU usage exceeds"; Value = "$($WhenHostCPUUsageExceeds) %"; }
+			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenHostCPUForLongerThan) minutes"; }
+		}
+		$ScriptInformation += @{ Data = "Generate network usage alerts"; Value = $GenerateHostNetworkUsageAlerts; }
+		If($GenerateHostNetworkUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "     When network usage exceeds"; Value = "$($WhenHostNetworkUsageExceeds) KB/s"; }
+			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenHostNetworkForLongerThan) minutes"; }
+		}
+		$ScriptInformation += @{ Data = "Generate memory usage alerts"; Value = $GenerateHostMemoryUsageAlerts; }
+		If($GenerateHostMemoryUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "     When memory usage exceeds"; Value = "$($WhenHostMemUsageExceeds) MB"; }
+			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenHostMemForLongerThan) minutes"; }
+		}
+		$ScriptInformation += @{ Data = "Generate control domain memory usage alerts"; Value = $GenerateDom0MemUsageAlerts; }
+		If($GenerateDom0MemUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "    When control domain memory usage exceeds "; Value = "$($WhenDom0MemUsageExceeds) %"; }
+			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenDom0ForLongerThan) minutes"; }
+		}
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 250;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		If($GenerateHostCPUUsageAlerts -eq "Selected" -or
+		   $GenerateHostNetworkUsageAlerts -eq "Selected" -or
+		   $GenerateHostMemoryUsageAlerts -eq "Selected" -or
+		   $GenerateDom0MemUsageAlerts -eq "Selected")
+		{
+			Line 3 "Alert repeat interval`t`t`t`t: $($AlertRepeatInterval) minutes"
+		}
+		Else
+		{
+			Line 3 "Alert repeat interval`t`t`t`t: Not Set"
+		}
+		Line 3 "Generate CPU usage alerts`t`t`t: " $GenerateHostCPUUsageAlerts
+		If($GenerateHostCPUUsageAlerts -eq "Selected")
+		{
+			Line 4 "When CPU usage exceeds    : " "$($WhenHostCPUUsageExceeds) %"
+			Line 4 "For longer than           : " "$($WhenHostCPUForLongerThan) minutes"
+		}
+		Line 3 "Generate network usage alerts`t`t`t: " $GenerateHostNetworkUsageAlerts
+		If($GenerateHostNetworkUsageAlerts -eq "Selected")
+		{
+			Line 4 "When network usage exceeds: " "$($WhenHostNetworkUsageExceeds) KB/s"
+			Line 4 "For longer than           : " "$($WhenHostNetworkForLongerThan) minutes"
+		}
+		Line 3 "Generate memory usage alerts`t`t`t: " $GenerateHostMemoryUsageAlerts
+		If($GenerateHostMemoryUsageAlerts -eq "Selected")
+		{
+			Line 4 "When memory usage exceeds : " "$($WhenHostMemUsageExceeds) MB"
+			Line 4 "For longer than           : " "$($WhenHostMemForLongerThan) minutes"
+		}
+		Line 3 "Generate control domain memory usage alerts`t: " $GenerateDom0MemUsageAlerts
+		If($GenerateDom0MemUsageAlerts -eq "Selected")
+		{
+			Line 4 "When control domain memory usage exceeds: " "$($WhenDom0MemUsageExceeds) %"
+			Line 4 "For longer than                         : " "$($WhenDom0ForLongerThan) minutes"
+		}
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		If($GenerateHostCPUUsageAlerts -eq "Selected" -or
+		   $GenerateHostNetworkUsageAlerts -eq "Selected" -or
+		   $GenerateHostMemoryUsageAlerts -eq "Selected" -or
+		   $GenerateDom0MemUsageAlerts -eq "Selected")
+		{
+			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "$($AlertRepeatInterval) minutes", $htmlwhite)
+		}
+		Else
+		{
+			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "Not set", $htmlwhite)
+		}
+		$rowdata += @(, ("Generate CPU usage alerts", ($htmlsilver -bor $htmlbold), $GenerateHostCPUUsageAlerts, $htmlwhite))
+		If($GenerateHostCPUUsageAlerts -eq "Selected")
+		{
+			$rowdata += @(, ("     When CPU usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenHostCPUUsageExceeds) %", $htmlwhite))
+			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenHostCPUForLongerThan) minutes", $htmlwhite))
+		}
+		$rowdata += @(, ("Generate network usage alerts", ($htmlsilver -bor $htmlbold),$GenerateHostNetworkUsageAlerts , $htmlwhite))
+		If($GenerateHostNetworkUsageAlerts -eq "Selected")
+		{
+			$rowdata += @(, ("     When network usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenHostNetworkUsageExceeds) KB/s", $htmlwhite))
+			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenHostNetworkForLongerThan) minutes", $htmlwhite))
+		}
+		$rowdata += @(, ("Generate memory usage alerts", ($htmlsilver -bor $htmlbold), $GenerateHostMemoryUsageAlerts, $htmlwhite))
+		If($GenerateHostMemoryUsageAlerts -eq "Selected")
+		{
+			$rowdata += @(, ("     When memory usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenHostMemUsageExceeds) MB", $htmlwhite))
+			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenHostMemForLongerThan) minutes", $htmlwhite))
+		}
+		$rowdata += @(, ("Generate control domain memory usage alerts", ($htmlsilver -bor $htmlbold), $GenerateDom0MemUsageAlerts, $htmlwhite))
+		If($GenerateDom0MemUsageAlerts -eq "Selected")
+		{
+			$rowdata += @(, ("     When control domain memory usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenDom0MemUsageExceeds) %", $htmlwhite))
+			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenDom0ForLongerThan) minutes", $htmlwhite))
+		}
+
+		$msg = ""
+		$columnWidths = @("275", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
+	}
+	
 }
 
 Function OutputHostMultipathing
@@ -5731,6 +6014,78 @@ Function OutputHostMultipathing
 Function OutputHostLogDestination
 {
 	Param([object]$XSHost)
+	
+	$LogLocation = ""
+	If ($XSHost.Logging.Count -eq 0)
+	{
+		$LogLocation = "Local"
+		$StoreLogs = "Not selected"
+		$LogServer = ""
+	}
+	Else
+	{
+		$LogLocation = "Local and Remote ($($XSHost.logging.syslog_destination))"
+		$StoreLogs = "Selected"
+		$LogServer = "$($XSHost.logging.syslog_destination)"
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Log Destination"
+	}
+	If ($Text)
+	{
+		Line 2 "Log Destination"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Log Destination"
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Log destination"; Value = $LogLocation; }
+		$ScriptInformation += @{ Data = "Also store the system logs on a remote server"; Value = $StoreLogs; }
+		$ScriptInformation += @{ Data = "Server"; Value = $LogServer; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 250;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Log destination`t`t`t`t`t: " $LogLocation
+		Line 3 "Also store the system logs on a remote server`t: " $StoreLogs
+		Line 3 "Server`t`t`t`t`t`t: " $LogServer
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Log destination", ($htmlsilver -bor $htmlbold), $LogLocation, $htmlwhite)
+		$rowdata += @(, ("Also store the system logs on a remote server", ($htmlsilver -bor $htmlbold), $StoreLogs, $htmlwhite))
+		$rowdata += @(, ("Server", ($htmlsilver -bor $htmlbold), $LogServer, $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("275", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
+	}
 }
 
 Function OutputHostPowerOn
