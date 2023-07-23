@@ -428,9 +428,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.009
+	VERSION: 0.010
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 22, 2023
+	LASTEDIT: July 23, 2023
 #>
 
 #endregion
@@ -541,6 +541,16 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.010
+#	Add these Functions (Webster)
+#		OutputVMCPU
+#		OutputVMBootOptions
+#		OutputVMStartOptions (with some data that I can find)
+#		OutputVMAlerts (with dta)
+#		OutputVMHomeServer
+#		OutputVMAdvancedOptions
+#	Rearrange the order of the VM functions
 #
 #.009
 #	Add output to Function OutputHostAlerts (Webster)
@@ -687,9 +697,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.009'
+$script:MyVersion = '0.010'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/22/2023"
+$tmpdate = [datetime] "07/23/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -5797,7 +5807,6 @@ Function OutputHostAlerts
 		WriteHTMLLine 3 0 "Alerts"
 	}
 
-	[int32]$AlertRepeatInterval      = 0
 	$GenerateDom0MemUsageAlerts      = "Not selected"
 	[double]$WhenDom0MemUsageExceeds = 0
 	[int32]$WhenDom0ForLongerThan    = 0
@@ -5818,6 +5827,8 @@ Function OutputHostAlerts
 		}
 	}
 	
+	[int32]$AlertRepeatInterval          = 0
+
 	$GenerateHostCPUUsageAlerts          = "Not selected"
 	[double]$WhenHostCPUUsageExceeds     = 0
 	[int32]$WhenHostCPUForLongerThan     = 0
@@ -5851,14 +5862,14 @@ Function OutputHostAlerts
 				$GenerateHostNetworkUsageAlerts = "Selected"
 				$WhenHostNetworkUsageExceeds    = $Alert.alarm_trigger_level.Value / 1024
 				$WhenHostNetworkForLongerThan   = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval        = $Alert.alarm_auto_inhibit_period.Value / 60
+				$AlertRepeatInterval            = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
 			ElseIf($Alert.Name.Value -eq "memory_free_kib")
 			{
 				$GenerateHostMemoryUsageAlerts = "Selected"
 				$WhenHostMemUsageExceeds       = $Alert.alarm_trigger_level.Value / 1024
 				$WhenHostMemForLongerThan      = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval        = $Alert.alarm_auto_inhibit_period.Value / 60
+				$AlertRepeatInterval           = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
 		}
 	}
@@ -6003,7 +6014,6 @@ Function OutputHostAlerts
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLIne 0 0 ""
 	}
-	
 }
 
 Function OutputHostMultipathing
@@ -7602,10 +7612,16 @@ Function ProcessVMs
 			}
 		}#>
 		OutputVM $VM $VMOSName $VMHost $VMFirst
+		OutputVMCustomFields $VM
+		OutputVMCPU $VM
+		OutputVMBootOptions $VM
+		OutputVMStartOptions $VM
+		OutputVMAlerts $VM
+		OutputVMHomeServer $VM
+		OutputVMGPU $VM
+		OutputVMAdvancedOptions $VM
 		OutputVMStorage $VM $VMHost
 		OutputVMNIC $VM
-		OutputVMGPU $VM
-		OutputVMCustomFields $VM
 		OutputVMSnapshots $VM
 		$VMFirst = $False
 	}
@@ -7780,6 +7796,580 @@ Function OutputVM
 	}
 }
 
+Function OutputVMCustomFields
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Custom Fields"
+
+	$CustomFields = $CustomFields = Get-XSCustomFields $($vm.other_config)
+	
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 2 "Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Custom Fields"
+	}
+	
+	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	{
+		$VMName = $VM.Name_Label
+
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no Custom Fields for VM $VMName"
+		}
+		If ($Text)
+		{
+			Line 3 "There are no Custom Fields for VM $VMName"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no Custom Fields for VM $VMName"
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If ($Text)
+		{
+			#nothing
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+		}
+
+		[int]$cnt = -1
+		ForEach ($Item in $CustomFields)
+		{
+			$cnt++
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = $($Item.Name); Value = $Item.Value; }
+			}
+			If ($Text)
+			{
+				Line 3 "$($Item.Name): " $Item.Value
+			}
+			If ($HTML)
+			{
+				If ($cnt -eq 0)
+				{
+					$columnHeaders = @($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
+				}
+				Else
+				{
+					$rowdata += @(, ($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
+				}
+			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 250;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("250", "250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+}
+
+Function OutputVMCPU
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM CPU"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "CPU"
+	}
+	If ($Text)
+	{
+		Line 2 "CPU"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "CPU"
+	}
+
+}
+
+Function OutputVMBootOptions
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Boot Options"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Boot Options"
+	}
+	If ($Text)
+	{
+		Line 2 "Boot Options"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Boot Options"
+	}
+	
+}
+
+Function OutputVMStartOptions
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Start Options"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Start Options"
+	}
+	If ($Text)
+	{
+		Line 2 "Start Options"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Start Options"
+	}
+	
+	$StartOrder = $VM.order.ToString()
+	$StartNextVMAfter = $VM.start_delay
+	
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Start order"; Value = $StartOrder; }
+		$ScriptInformation += @{ Data = "Attempt to start next VM after"; Value = "$($StartNextVMAfter) seconds"; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 175;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Start order                   : " $StartOrder
+		Line 3 "Attempt to start next VM after: " "$($StartNextVMAfter) seconds"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Start order", ($htmlsilver -bor $htmlbold),$StartOrder, $htmlwhite)
+		$rowdata += @(, ("Attempt to start next VM after", ($htmlsilver -bor $htmlbold), "$($StartNextVMAfter) seconds", $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("200", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
+	}
+	
+}
+
+Function OutputVMAlerts
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Alerts"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Alerts"
+	}
+	If ($Text)
+	{
+		Line 2 "Alerts"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Alerts"
+	}
+	
+	[int32]$AlertRepeatInterval        = 0
+
+	$GenerateVMCPUUsageAlerts          = "Not selected"
+	[double]$WhenVMCPUUsageExceeds     = 0
+	[int32]$WhenVMCPUForLongerThan     = 0
+
+	$GenerateVMNetworkUsageAlerts      = "Not selected"
+	[int32]$WhenVMNetworkUsageExceeds  = 0
+	[int32]$WhenVMNetworkForLongerThan = 0
+
+	$GenerateVMDiskUsageAlerts         = "Not selected"
+	[int32]$WhenVMMemUsageExceeds      = 0
+	[int32]$WhenVMMemForLongerThan     = 0
+
+	$OtherConfig = ($VM | Get-XenVMProperty -XenProperty OtherConfig -EA 0)
+
+	If($OtherConfig.ContainsKey("perfmon"))
+	{
+		[xml]$XML = $OtherConfig.perfmon
+			
+		ForEach($Alert in $XML.config.variable)
+		{
+			If($Alert.Name.Value -eq "cpu_usage")
+			{
+				$GenerateVMCPUUsageAlerts = "Selected"
+				[double]$tmp              = $Alert.alarm_trigger_level.Value
+				$WhenVMCPUUsageExceeds    = $tmp * 100
+				$WhenVMCPUForLongerThan   = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval      = $Alert.alarm_auto_inhibit_period.Value / 60
+			}
+			ElseIf($Alert.Name.Value -eq "network_usage")
+			{
+				$GenerateVMNetworkUsageAlerts = "Selected"
+				$WhenVMNetworkUsageExceeds    = $Alert.alarm_trigger_level.Value / 1024
+				$WhenVMNetworkForLongerThan   = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval          = $Alert.alarm_auto_inhibit_period.Value / 60
+			}
+			ElseIf($Alert.Name.Value -eq "disk_usage")
+			{
+				$GenerateVMDiskUsageAlerts = "Selected"
+				$WhenVMMemUsageExceeds     = $Alert.alarm_trigger_level.Value / 1024
+				$WhenVMMemForLongerThan    = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval       = $Alert.alarm_auto_inhibit_period.Value / 60
+			}
+		}
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		If($GenerateVMCPUUsageAlerts -eq "Selected" -or
+		   $GenerateVMNetworkUsageAlerts -eq "Selected" -or
+		   $GenerateVMDiskUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "$($AlertRepeatInterval) minutes"; }
+		}
+		Else
+		{
+			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "Not Set"; }
+		}
+		$ScriptInformation += @{ Data = "Generate CPU usage alerts"; Value = $GenerateVMCPUUsageAlerts; }
+		If($GenerateVMCPUUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "     When CPU usage exceeds"; Value = "$($WhenVMCPUUsageExceeds) %"; }
+			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenVMCPUForLongerThan) minutes"; }
+		}
+		$ScriptInformation += @{ Data = "Generate network usage alerts"; Value = $GenerateVMNetworkUsageAlerts; }
+		If($GenerateVMNetworkUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "     When network usage exceeds"; Value = "$($WhenVMNetworkUsageExceeds) KB/s"; }
+			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenVMNetworkForLongerThan) minutes"; }
+		}
+		$ScriptInformation += @{ Data = "Generate Disk usage alerts"; Value = $GenerateVMDiskUsageAlerts; }
+		If($GenerateVMDiskUsageAlerts -eq "Selected")
+		{
+			$ScriptInformation += @{ Data = "     When Disk usage exceeds"; Value = "$($WhenVMMemUsageExceeds) KB/s"; }
+			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenVMMemForLongerThan) minutes"; }
+		}
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 175;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		If($GenerateVMCPUUsageAlerts -eq "Selected" -or
+		   $GenerateVMNetworkUsageAlerts -eq "Selected" -or
+		   $GenerateVMDiskUsageAlerts -eq "Selected")
+		{
+			Line 3 "Alert repeat interval             : $($AlertRepeatInterval) minutes"
+		}
+		Else
+		{
+			Line 3 "Alert repeat interval             : Not Set"
+		}
+		Line 3 "Generate CPU usage alerts         : " $GenerateVMCPUUsageAlerts
+		If($GenerateVMCPUUsageAlerts -eq "Selected")
+		{
+			Line 4 "When CPU usage exceeds    : " "$($WhenVMCPUUsageExceeds) %"
+			Line 4 "For longer than           : " "$($WhenVMCPUForLongerThan) minutes"
+		}
+		Line 3 "Generate network usage alerts     : " $GenerateVMNetworkUsageAlerts
+		If($GenerateVMNetworkUsageAlerts -eq "Selected")
+		{
+			Line 4 "When network usage exceeds: " "$($WhenVMNetworkUsageExceeds) KB/s"
+			Line 4 "For longer than           : " "$($WhenVMNetworkForLongerThan) minutes"
+		}
+		Line 3 "Generate Disk usage alerts        : " $GenerateVMDiskUsageAlerts
+		If($GenerateVMDiskUsageAlerts -eq "Selected")
+		{
+			Line 4 "When Disk usage exceeds   : " "$($WhenVMMemUsageExceeds) KB/s"
+			Line 4 "For longer than           : " "$($WhenVMMemForLongerThan) minutes"
+		}
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		If($GenerateVMCPUUsageAlerts -eq "Selected" -or
+		   $GenerateVMNetworkUsageAlerts -eq "Selected" -or
+		   $GenerateVMDiskUsageAlerts -eq "Selected")
+		{
+			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "$($AlertRepeatInterval) minutes", $htmlwhite)
+		}
+		Else
+		{
+			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "Not set", $htmlwhite)
+		}
+		$rowdata += @(, ("Generate CPU usage alerts", ($htmlsilver -bor $htmlbold), $GenerateVMCPUUsageAlerts, $htmlwhite))
+		If($GenerateVMCPUUsageAlerts -eq "Selected")
+		{
+			$rowdata += @(, ("     When CPU usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenVMCPUUsageExceeds) %", $htmlwhite))
+			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenVMCPUForLongerThan) minutes", $htmlwhite))
+		}
+		$rowdata += @(, ("Generate network usage alerts", ($htmlsilver -bor $htmlbold),$GenerateVMNetworkUsageAlerts , $htmlwhite))
+		If($GenerateVMNetworkUsageAlerts -eq "Selected")
+		{
+			$rowdata += @(, ("     When network usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenVMNetworkUsageExceeds) KB/s", $htmlwhite))
+			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenVMNetworkForLongerThan) minutes", $htmlwhite))
+		}
+		$rowdata += @(, ("Generate Disk usage alerts", ($htmlsilver -bor $htmlbold), $GenerateVMDiskUsageAlerts, $htmlwhite))
+		If($GenerateVMDiskUsageAlerts -eq "Selected")
+		{
+			$rowdata += @(, ("     When Disk usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenVMMemUsageExceeds) KB/s", $htmlwhite))
+			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenVMMemForLongerThan) minutes", $htmlwhite))
+		}
+
+		$msg = ""
+		$columnWidths = @("200", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
+	}
+}
+
+Function OutputVMHomeServer
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Home Server"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Home Server"
+	}
+	If ($Text)
+	{
+		Line 2 "Home Server"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Home Server"
+	}
+	
+	$HomeServerRef = $VM.resident_on
+	
+	$HomeServer = Get-XenHost -Ref $HomeServerRef -EA 0
+	
+	If(!$?)
+	{
+		#unable to retrieve the home server
+	}
+	ElseIf($? -and $Null -eq $HomeServer)
+	{
+		#there is no home server
+		$HomeServer = "VM is not assigned a home server"
+	}
+	Else
+	{
+		#we have the home server
+	}
+}
+
+Function OutputVMGPU
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM GPU"
+
+	$xenVMGPUs = @($vm.VGPUs | Get-XenVGPU | ForEach-Object { Get-XenVGPUType -Ref $_.type })
+	$VMName = $VM.Name_Label
+	$nrGPUs = $xenVMGPUs.Count
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "GPU"
+	}
+	If ($Text)
+	{
+		Line 2 "GPU"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "GPU"
+	}
+
+	If ($nrGPUs -lt 1)
+	{
+
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no GPU's configured for VM $VMName"
+		}
+		If ($Text)
+		{
+			Line 3 "There are no GPU's configured for VM $VMName"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no GPU's configured for VM $VMName"
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Number of GPU's"; Value = "$nrGPUs"; }
+		}
+		If ($Text)
+		{
+			Line 3 "Number of GPU's`t`t: " "$nrGPUs"
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Number of GPU's", ($htmlsilver -bor $htmlbold), "$nrGPUs", $htmlwhite)
+			$rowdata = @()
+		}
+
+		$gpuCount = 0
+		ForEach ($Item in $xenVMGPUs)
+		{
+			$xenGPUFrameBufferSize = $(Convert-SizeToString -size $Item.framebuffer_size -Decimal 1)
+			
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Vendor name"; Value = $Item.vendor_name; }
+				$ScriptInformation += @{ Data = "Model name"; Value = $Item.model_name; }
+				$ScriptInformation += @{ Data = "Framebuffer size"; Value = $xenGPUFrameBufferSize; }
+			}
+			If ($Text)
+			{
+				Line 3 "Vendor name`t`t: " $Item.vendor_name
+				Line 3 "Model name`t`t: " $Item.model_name
+				Line 3 "Framebuffer size`t: " $xenGPUFrameBufferSize
+			}
+			If ($HTML)
+			{
+				$rowdata += @(, ("Vendor name", ($htmlsilver -bor $htmlbold), $Item.vendor_name, $htmlwhite))
+				$rowdata += @(, ("Model name", ($htmlsilver -bor $htmlbold), $Item.model_name, $htmlwhite))
+				$rowdata += @(, ("Framebuffer size", ($htmlsilver -bor $htmlbold), $xenGPUFrameBufferSize, $htmlwhite))
+			}
+			$gpuCount++
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("150", "250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+}
+
+Function OutputVMAdvancedOptions
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Advanced Options"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Advanced Options"
+	}
+	If ($Text)
+	{
+		Line 2 "Advanced Options"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Advanced Options"
+	}
+	
+}
 
 Function OutputVMStorage
 {
@@ -7953,121 +8543,6 @@ Function OutputVMStorage
 	}
 
 
-}
-
-Function OutputVMGPU
-{
-	Param([object] $VM)
-	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM GPU"
-
-	$xenVMGPUs = @($vm.VGPUs | Get-XenVGPU | ForEach-Object { Get-XenVGPUType -Ref $_.type })
-	$VMName = $VM.Name_Label
-	$nrGPUs = $xenVMGPUs.Count
-	If ($MSWord -or $PDF)
-	{
-		WriteWordLine 3 0 "GPU"
-	}
-	If ($Text)
-	{
-		Line 2 "GPU"
-	}
-	If ($HTML)
-	{
-		WriteHTMLLine 3 0 "GPU"
-	}
-
-	If ($nrGPUs -lt 1)
-	{
-
-		If ($MSWord -or $PDF)
-		{
-			WriteWordLine 0 1 "There are no GPU's configured for VM $VMName"
-		}
-		If ($Text)
-		{
-			Line 3 "There are no GPU's configured for VM $VMName"
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			WriteHTMLLine 0 1 "There are no GPU's configured for VM $VMName"
-		}
-	}
-	Else
-	{
-		If ($MSWord -or $PDF)
-		{
-			[System.Collections.Hashtable[]] $ScriptInformation = @()
-			$ScriptInformation += @{ Data = "Number of GPU's"; Value = "$nrGPUs"; }
-		}
-		If ($Text)
-		{
-			Line 3 "Number of GPU's`t`t: " "$nrGPUs"
-		}
-		If ($HTML)
-		{
-			$columnHeaders = @("Number of GPU's", ($htmlsilver -bor $htmlbold), "$nrGPUs", $htmlwhite)
-			$rowdata = @()
-		}
-
-		$gpuCount = 0
-		ForEach ($Item in $xenVMGPUs)
-		{
-			$xenGPUFrameBufferSize = $(Convert-SizeToString -size $Item.framebuffer_size -Decimal 1)
-			
-			If ($MSWord -or $PDF)
-			{
-				$ScriptInformation += @{ Data = "Vendor name"; Value = $Item.vendor_name; }
-				$ScriptInformation += @{ Data = "Model name"; Value = $Item.model_name; }
-				$ScriptInformation += @{ Data = "Framebuffer size"; Value = $xenGPUFrameBufferSize; }
-			}
-			If ($Text)
-			{
-				Line 3 "Vendor name`t`t: " $Item.vendor_name
-				Line 3 "Model name`t`t: " $Item.model_name
-				Line 3 "Framebuffer size`t: " $xenGPUFrameBufferSize
-			}
-			If ($HTML)
-			{
-				$rowdata += @(, ("Vendor name", ($htmlsilver -bor $htmlbold), $Item.vendor_name, $htmlwhite))
-				$rowdata += @(, ("Model name", ($htmlsilver -bor $htmlbold), $Item.model_name, $htmlwhite))
-				$rowdata += @(, ("Framebuffer size", ($htmlsilver -bor $htmlbold), $xenGPUFrameBufferSize, $htmlwhite))
-			}
-			$gpuCount++
-		}
-		
-		If ($MSWord -or $PDF)
-		{
-			$Table = AddWordTable -Hashtable $ScriptInformation `
-				-Columns Data, Value `
-				-List `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
-
-			## IB - Set the header row format
-			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-
-			$Table.Columns.Item(1).Width = 150;
-			$Table.Columns.Item(2).Width = 250;
-
-			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-
-			FindWordDocumentEnd
-			$Table = $Null
-			WriteWordLine 0 0 ""
-		}
-		If ($Text)
-		{
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			$msg = ""
-			$columnWidths = @("150", "250")
-			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-			WriteHTMLLine 0 0 ""
-		}
-	}
 }
 
 Function OutputVMNIC
@@ -8247,118 +8722,6 @@ Function OutputVMNIC
 		{
 			$msg = ""
 			$columnWidths = @("150", "250")
-			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-			WriteHTMLLine 0 0 ""
-		}
-	}
-}
-
-Function OutputVMCustomFields
-{
-	Param([object] $VM)
-	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Custom Fields"
-
-	$CustomFields = $CustomFields = Get-XSCustomFields $($vm.other_config)
-	
-	If ($MSWord -or $PDF)
-	{
-		WriteWordLine 3 0 "Custom Fields"
-	}
-	If ($Text)
-	{
-		Line 2 "Custom Fields"
-	}
-	If ($HTML)
-	{
-		WriteHTMLLine 3 0 "Custom Fields"
-	}
-	
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
-	{
-		$VMName = $VM.Name_Label
-
-		If ($MSWord -or $PDF)
-		{
-			WriteWordLine 0 1 "There are no Custom Fields for VM $VMName"
-		}
-		If ($Text)
-		{
-			Line 3 "There are no Custom Fields for VM $VMName"
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			WriteHTMLLine 0 1 "There are no Custom Fields for VM $VMName"
-		}
-	}
-	Else
-	{
-		If ($MSWord -or $PDF)
-		{
-			[System.Collections.Hashtable[]] $ScriptInformation = @()
-		}
-		If ($Text)
-		{
-			#nothing
-		}
-		If ($HTML)
-		{
-			$rowdata = @()
-		}
-
-		[int]$cnt = -1
-		ForEach ($Item in $CustomFields)
-		{
-			$cnt++
-			If ($MSWord -or $PDF)
-			{
-				$ScriptInformation += @{ Data = $($Item.Name); Value = $Item.Value; }
-			}
-			If ($Text)
-			{
-				Line 3 "$($Item.Name): " $Item.Value
-			}
-			If ($HTML)
-			{
-				If ($cnt -eq 0)
-				{
-					$columnHeaders = @($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
-				}
-				Else
-				{
-					$rowdata += @(, ($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
-				}
-			}
-		}
-		
-		If ($MSWord -or $PDF)
-		{
-			$Table = AddWordTable -Hashtable $ScriptInformation `
-				-Columns Data, Value `
-				-List `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
-
-			## IB - Set the header row format
-			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-
-			$Table.Columns.Item(1).Width = 250;
-			$Table.Columns.Item(2).Width = 250;
-
-			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-
-			FindWordDocumentEnd
-			$Table = $Null
-			WriteWordLine 0 0 ""
-		}
-		If ($Text)
-		{
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			$msg = ""
-			$columnWidths = @("250", "250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
