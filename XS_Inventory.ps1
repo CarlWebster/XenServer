@@ -428,7 +428,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.010
+	VERSION: 0.011
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
 	LASTEDIT: July 23, 2023
 #>
@@ -542,12 +542,15 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
+#.011
+#	Updated Function OutputVMHomeServer with data (Webster)
+#
 #.010
 #	Add these Functions (Webster)
 #		OutputVMCPU
 #		OutputVMBootOptions
 #		OutputVMStartOptions (with some data that I can find)
-#		OutputVMAlerts (with dta)
+#		OutputVMAlerts (with data)
 #		OutputVMHomeServer
 #		OutputVMAdvancedOptions
 #	Rearrange the order of the VM functions
@@ -697,7 +700,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.010'
+$script:MyVersion = '0.011'
 $Script:ScriptName = "XS_Inventory.ps1"
 $tmpdate = [datetime] "07/23/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
@@ -7925,7 +7928,8 @@ Function OutputVMCPU
 	{
 		WriteHTMLLine 3 0 "CPU"
 	}
-
+	#from the XS team
+	#the topology is in the VM's platform property, key cores-per-socket
 }
 
 Function OutputVMBootOptions
@@ -8217,15 +8221,32 @@ Function OutputVMHomeServer
 		WriteHTMLLine 3 0 "Home Server"
 	}
 	
-	$HomeServerRef = $VM.resident_on
+	$HomeServerRef = $VM.affinity.opaque_ref
 	
-	$HomeServer = Get-XenHost -Ref $HomeServerRef -EA 0
+	$results = Get-XenHost -Ref $HomeServerRef -EA 0
 	
 	If(!$?)
 	{
 		#unable to retrieve the home server
+		Write-Warning "
+		`n
+		Unable to retrieve Home Server for VM $($VM.name_label)`
+		"
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 0 "Unable to retrieve Home Server for VM $($VM.name_label)"
+		}
+		If ($Text)
+		{
+			Line 0 "Unable to retrieve Home Server for VM $($VM.name_label)"
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 0 "Unable to retrieve Home Server for VM $($VM.name_label)"
+		}
+		Return
 	}
-	ElseIf($? -and $Null -eq $HomeServer)
+	ElseIf($? -and $Null -eq $results)
 	{
 		#there is no home server
 		$HomeServer = "VM is not assigned a home server"
@@ -8233,6 +8254,46 @@ Function OutputVMHomeServer
 	Else
 	{
 		#we have the home server
+		$HomeServer = $results.name_label
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Place the VM on this server"; Value = "$($HomeServer)"; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 175;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Place the VM on this server: " "$($HomeServer)"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Place the VM on this server", ($htmlsilver -bor $htmlbold), "$($HomeServer)", $htmlwhite)
+
+		$msg = ""
+		$columnWidths = @("200", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
 	}
 }
 
@@ -8368,7 +8429,10 @@ Function OutputVMAdvancedOptions
 	{
 		WriteHTMLLine 3 0 "Advanced Options"
 	}
-	
+
+	#from the XS team
+	#the optimisation on the Advanced tab refers to the the VM's HVM_shadow_multiplier
+	#XC uses 1 for general optimisation and 4 for citrix virtual apps
 }
 
 Function OutputVMStorage
