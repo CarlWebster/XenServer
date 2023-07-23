@@ -428,7 +428,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.011
+	VERSION: 0.012
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
 	LASTEDIT: July 23, 2023
 #>
@@ -541,6 +541,10 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.012
+#	Added testing notes to Function OutputVMCPU (Webster)
+#	Updated Function OutputVMAdvancedOptions with data (Webster)
 #
 #.011
 #	Updated Function OutputVMHomeServer with data (Webster)
@@ -700,7 +704,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.011'
+$script:MyVersion = '0.012'
 $Script:ScriptName = "XS_Inventory.ps1"
 $tmpdate = [datetime] "07/23/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
@@ -7930,6 +7934,18 @@ Function OutputVMCPU
 	}
 	#from the XS team
 	#the topology is in the VM's platform property, key cores-per-socket
+	#VCPUs_at_startup	8
+	#VCPUs_max		8
+	#VCPUs_params		{[weight, 256]}
+	#1 = lowest - first slider tick
+	#4 = second slider tick
+	#16 = third slider tick
+	#64 = fourth slider tick
+	#256 = normal - fifth slider tick
+	#1024 = sixth slider tick
+	#4096 = seventh slider tick
+	#16384 = eighth slider tick
+	#65535 = highest - ninth slider tick
 }
 
 Function OutputVMBootOptions
@@ -8433,6 +8449,108 @@ Function OutputVMAdvancedOptions
 	#from the XS team
 	#the optimisation on the Advanced tab refers to the the VM's HVM_shadow_multiplier
 	#XC uses 1 for general optimisation and 4 for citrix virtual apps
+	
+	$ShadowValue = $VM.HVM_shadow_multiplier
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	}
+	If ($Text)
+	{
+		#nothing
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+	}
+	
+	If($ShadowValue -eq 1)
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Optimize for general use"; Value = ""; }
+			$ScriptInformation += @{ Data = "     Shadow memory multiplier"; Value = $ShadowValue.ToString(); }
+		}
+		If ($Text)
+		{
+			Line 3 "Optimize for general use"
+			Line 4 "Shadow memory multiplier: " $ShadowValue.ToString()
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Optimize for general use", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+			$rowdata += @(, ("     Shadow memory multiplier", ($htmlsilver -bor $htmlbold), $ShadowValue.ToString(), $htmlwhite))
+		}
+	}
+	ElseIf($ShadowValue -eq 4)
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Optimize for Citrix Virtual Apps"; Value = ""; }
+			$ScriptInformation += @{ Data = "     Shadow memory multiplier"; Value = $ShadowValue.ToString(); }
+		}
+		If ($Text)
+		{
+			Line 3 "Optimize for Citrix Virtual Apps"
+			Line 4 "Shadow memory multiplier: " $ShadowValue.ToString()
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Optimize for Citrix Virtual Apps", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+			$rowdata += @(, ("     Shadow memory multiplier", ($htmlsilver -bor $htmlbold), $ShadowValue.ToString(), $htmlwhite))
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Optimize manually (advanced use only)"; Value = ""; }
+			$ScriptInformation += @{ Data = "     Shadow memory multiplier"; Value = $ShadowValue.ToString(); }
+		}
+		If ($Text)
+		{
+			Line 3 "Optimize manually (advanced use only)"
+			Line 4 "Shadow memory multiplier: " $ShadowValue.ToString()
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Optimize manually (advanced use only)", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+			$rowdata += @(, ("     Shadow memory multiplier", ($htmlsilver -bor $htmlbold), $ShadowValue.ToString(), $htmlwhite))
+		}
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 200;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("200", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
 }
 
 Function OutputVMStorage
