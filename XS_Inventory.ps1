@@ -428,9 +428,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.012
+	VERSION: 0.013
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 23, 2023
+	LASTEDIT: July 24, 2023
 #>
 
 #endregion
@@ -541,6 +541,13 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.013
+#	Updated Function OutputVMBootOptions with data (Webster)
+#		Some code written by John borrowed from Function OutputVM
+#	Updated Function OutputVMCPU with data (Webster)
+#		Some code written by John borrowed from Function OutputVM
+#	Updated Function OutputVMHomeServer with the correct data (Webster)
 #
 #.012
 #	Added testing notes to Function OutputVMCPU (Webster)
@@ -704,9 +711,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.012'
+$script:MyVersion = '0.013'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/23/2023"
+$tmpdate = [datetime] "07/24/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -7936,6 +7943,33 @@ Function OutputVMCPU
 	#the topology is in the VM's platform property, key cores-per-socket
 	#VCPUs_at_startup	8
 	#VCPUs_max		8
+
+	If ($vm.platform["cores-per-socket"] -gt 1)
+	{
+		$vCPUcoreText = "$($vm.platform["cores-per-socket"]) cores"
+	}
+	Else
+	{
+		$vCPUcoreText = "$($vm.platform["cores-per-socket"]) core"
+	}
+
+	try
+	{
+		$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
+		If ($sockets -gt 1)
+		{
+			$vCPUText = "$sockets sockets with $vCPUcoreText each"
+		}
+		Else
+		{
+			$vCPUText = "$sockets socket with $vCPUcoreText"
+		}
+	}
+	catch
+	{
+		$vCPUText = "$($VM.VCPUs_max) ($vCPUcoreText per socket)"
+	}
+	
 	#VCPUs_params		{[weight, 256]}
 	#1 = lowest - first slider tick
 	#4 = second slider tick
@@ -7946,6 +7980,101 @@ Function OutputVMCPU
 	#4096 = seventh slider tick
 	#16384 = eighth slider tick
 	#65535 = highest - ninth slider tick
+	
+	If ($vm.VCPUs_params["weight"] -gt 1)
+	{
+		$tmp = $vm.VCPUs_params["weight"]
+		
+		If($tmp -eq 1)
+		{
+			$vCPUPriority = "Lowest"
+		}
+		ElseIf($tmp -eq 4)
+		{
+			$vCPUPriority = "4 (Second tick on the slider)"
+		}
+		ElseIf($tmp -eq 16)
+		{
+			$vCPUPriority = "16 (third tick on the slider)"
+		}
+		ElseIf($tmp -eq 64)
+		{
+			$vCPUPriority = "64 (fourth tick on the slider)"
+		}
+		ElseIf($tmp -eq 256)
+		{
+			$vCPUPriority = "Normal"
+		}
+		ElseIf($tmp -eq 1024)
+		{
+			$vCPUPriority = "1024 (sixth tick on the slider)"
+		}
+		ElseIf($tmp -eq 4096)
+		{
+			$vCPUPriority = "4096 (seventh tick on the slider)"
+		}
+		ElseIf($tmp -eq 16384)
+		{
+			$vCPUPriority = "16384 (eigth tick on the slider)"
+		}
+		ElseIf($tmp -eq 65535)
+		{
+			$vCPUPriority = "Highest"
+		}
+		Else
+		{
+			$vCPUPriority = $tmp.ToString()
+		}
+	}
+	Else
+	{
+		$vCPUPriority = "Unable to determine the vCPU Priority"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Number of vCPUs"; Value = "$($VM.VCPUs_max)"; }
+		$ScriptInformation += @{ Data = "Topology"; Value = $vCPUText; }
+		$ScriptInformation += @{ Data = "vCPU priority for this virtual machine"; Value = $vCPUPriority; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 200;
+		$Table.Columns.Item(2).Width = 150;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Number of vCPUs                       : " "$($VM.VCPUs_max)"
+		Line 3 "Topology                              : " $vCPUText
+		Line 3 "vCPU priority for this virtual machine: " $vCPUPriority
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Number of vCPUs", ($htmlsilver -bor $htmlbold),"$($VM.VCPUs_max)", $htmlwhite)
+		$rowdata += @(, ("Topology", ($htmlsilver -bor $htmlbold), $vCPUText, $htmlwhite))
+		$rowdata += @(, ("vCPU priority for this virtual machine", ($htmlsilver -bor $htmlbold), $vCPUPriority, $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("200", "150")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
+	}
 }
 
 Function OutputVMBootOptions
@@ -7964,6 +8093,51 @@ Function OutputVMBootOptions
 	If ($HTML)
 	{
 		WriteHTMLLine 3 0 "Boot Options"
+	}
+
+	$bootorder = $vm.HVM_boot_params["order"].Replace("c", "Disk;").Replace("d", "DVD-drive;").Replace("n", "Network;").TrimEnd(";").Split(";")
+	for ($c = 1 ; $c -le $bootorder.count ; $c++)
+	{
+		$bootorder[$c - 1] = "[$c] $($bootorder[$c-1])"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Boot order"; Value = $($bootorder -join ", "); }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Boot order: " $($bootorder -join ", ")
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Boot order", ($htmlsilver -bor $htmlbold), $($bootorder -join ", "), $htmlwhite)
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
 	}
 	
 }
@@ -8030,7 +8204,6 @@ Function OutputVMStartOptions
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLIne 0 0 ""
 	}
-	
 }
 
 Function OutputVMAlerts
@@ -8237,46 +8410,52 @@ Function OutputVMHomeServer
 		WriteHTMLLine 3 0 "Home Server"
 	}
 	
-	$HomeServerRef = $VM.affinity.opaque_ref
-	
-	$results = Get-XenHost -Ref $HomeServerRef -EA 0
-	
-	If(!$?)
-	{
-		#unable to retrieve the home server
-		Write-Warning "
-		`n
-		Unable to retrieve Home Server for VM $($VM.name_label)`
-		"
-		If ($MSWord -or $PDF)
-		{
-			WriteWordLine 0 0 "Unable to retrieve Home Server for VM $($VM.name_label)"
-		}
-		If ($Text)
-		{
-			Line 0 "Unable to retrieve Home Server for VM $($VM.name_label)"
-		}
-		If ($HTML)
-		{
-			WriteHTMLLine 0 0 "Unable to retrieve Home Server for VM $($VM.name_label)"
-		}
-		Return
-	}
-	ElseIf($? -and $Null -eq $results)
+	If($VM.affinity.opaque_ref -eq "OpaqueRef:NULL")
 	{
 		#there is no home server
-		$HomeServer = "VM is not assigned a home server"
+		$HomeServerText = "Don't assign this VM a home server"
+		$HomeServer     = ""
+		
+		#find host currently on
+		$HomeServerRef = $VM.resident_on.opaque_ref
+		
+		$results = Get-XenHost -Ref $HomeServerRef -EA 0
+		
+		If(!$?)
+		{
+			#unable to retrieve the running host
+			$HomeServer     = "Unable to retrieve the running host"
+		}
+		Else
+		{
+			#we have the home server
+			$HomeServer     = "Currently running on host $($results.name_label)"
+		}
 	}
 	Else
 	{
-		#we have the home server
-		$HomeServer = $results.name_label
+		$HomeServerRef = $VM.affinity.opaque_ref
+		
+		$results = Get-XenHost -Ref $HomeServerRef -EA 0
+		
+		If(!$?)
+		{
+			#unable to retrieve the home server
+			$HomeServerText = "Unable to retrieve Home Server"
+			$HomeServer     = ""
+		}
+		Else
+		{
+			#we have the home server
+			$HomeServerText = "Place the VM on this server"
+			$HomeServer     = $results.name_label
+		}
 	}
 
 	If ($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		$ScriptInformation += @{ Data = "Place the VM on this server"; Value = "$($HomeServer)"; }
+		$ScriptInformation += @{ Data = $HomeServerText; Value = "$($HomeServer)"; }
 
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 			-Columns Data, Value `
@@ -8288,7 +8467,7 @@ Function OutputVMHomeServer
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
 		$Table.Columns.Item(1).Width = 175;
-		$Table.Columns.Item(2).Width = 100;
+		$Table.Columns.Item(2).Width = 250;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -8298,16 +8477,16 @@ Function OutputVMHomeServer
 	}
 	If ($Text)
 	{
-		Line 3 "Place the VM on this server: " "$($HomeServer)"
+		Line 3 "$($HomeServerText): " "$($HomeServer)"
 		Line 0 ""
 	}
 	If ($HTML)
 	{
 		$rowdata = @()
-		$columnHeaders = @("Place the VM on this server", ($htmlsilver -bor $htmlbold), "$($HomeServer)", $htmlwhite)
+		$columnHeaders = @("$HomeServerText", ($htmlsilver -bor $htmlbold), "$($HomeServer)", $htmlwhite)
 
 		$msg = ""
-		$columnWidths = @("200", "100")
+		$columnWidths = @("200", "250")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLIne 0 0 ""
 	}
