@@ -547,6 +547,7 @@ Param(
 #       OutputHostNICs (added fcoe and sriov, JohnB)
 #       OutputVMNIC (folowed XenCenter output, JohnB)
 #       OutputHostNetworking (Sorting adjusted, JohnB)
+#       OutputVM (small change to core output, JohnB)
 #.013
 #	Updated Function OutputVMBootOptions with data (Webster)
 #		Some code written by John borrowed from Function OutputVM
@@ -7699,7 +7700,11 @@ Function OutputVM
 		$bootorder[$c - 1] = "[$c] $($bootorder[$c-1])"
 	}
 
-	If ($vm.platform["cores-per-socket"] -gt 1)
+	If ($null -eq $($vm.platform["cores-per-socket"]))
+	{
+		$vCPUcoreText = "1 core"
+	}
+	ElseIf ($vm.platform["cores-per-socket"] -gt 1)
 	{
 		$vCPUcoreText = "$($vm.platform["cores-per-socket"]) cores"
 	}
