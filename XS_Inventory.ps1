@@ -7610,18 +7610,13 @@ Function ProcessVMs
 		$VMMetrics = $VM.guest_metrics | Get-XenVMGuestMetrics
 		if ([String]::IsNullOrEmpty($VMMetrics) -or [String]::IsNullOrEmpty($($VMMetrics.os_version)) -or $VMMetrics.os_version.Count -lt 1 -or [String]::IsNullOrEmpty($($VMMetrics.os_version.name)))
 		{
-			$VMOSName = "N/A"
+			$VMOSName = "Unknown"
 		}
 		else 
 		{
 			$VMOSName = $VMMetrics.os_version.name
 		}
 
-		<#$VMOSName = $(try { ($VM.guest_metrics | Get-XenVMGuestMetrics).os_version.name } catch { "N/A" })
-		If (!$?)
-		{
-			$VMOSName = "N/A"
-		}#>
 		$VMHostData = $VM.resident_on | Get-XenHost
 		if ([String]::IsNullOrEmpty($VMHostData) -or [String]::IsNullOrEmpty($($VMHostData.name_label)))
 		{
@@ -7672,7 +7667,7 @@ Function OutputVM
 	Param([object]$VM, [string]$VMOSName, [string]$VMHost, [bool]$VMFirst)
 	
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General"
-	If ($VMOSName -ne "N/A")
+	If ($VMOSName -ne "Unknown")
 	{
 		#remove the pipe symbol from the $VMOSName variable
 		$pos = -1
