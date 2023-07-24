@@ -428,7 +428,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.013
+	VERSION: 0.014
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
 	LASTEDIT: July 24, 2023
 #>
@@ -542,6 +542,13 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
+#.014
+#   Modified the following Functions
+#       OutputHostNICs (added fcoe and sriov, JohnB)
+#       OutputVMNIC (folowed XenCenter output, JohnB)
+#       OutputHostNetworking (Sorting adjusted, JohnB)
+#       OutputVM (small change to core output, JohnB)
+#       OutputVMCPU (small change to core output, JohnB)
 #.013
 #	Updated Function OutputVMBootOptions with data (Webster)
 #		Some code written by John borrowed from Function OutputVM
@@ -4368,8 +4375,8 @@ Function OutputPoolGeneral
 	If ($HTML)
 	{
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
-		$xtags = $xtags.Trim("<",">")
-		$folderName = $folderName.Trim("<",">")
+		$xtags = $xtags.Trim("<", ">")
+		$folderName = $folderName.Trim("<", ">")
 		WriteHTMLLine 2 0 "General"
 		$rowdata = @()
 		$columnHeaders = @("Pool name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
@@ -5532,7 +5539,7 @@ Function OutputHostGeneral
 		$folderName = $XSHost.Other_Config["folder"]
 	}
 
-	If($XSHost.name_description -eq "Default install")
+	If ($XSHost.name_description -eq "Default install")
 	{
 		$XSHostDescription = "Default install of Citrix Hypervisor"
 	}
@@ -5604,8 +5611,8 @@ Function OutputHostGeneral
 	If ($HTML)
 	{
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
-		$xtags = $xtags.Trim("<",">")
-		$folderName = $folderName.Trim("<",">")
+		$xtags = $xtags.Trim("<", ">")
+		$folderName = $folderName.Trim("<", ">")
 		WriteHTMLLine 2 0 "Host: $($XSHost.name_label)"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $XSHost.name_label, $htmlwhite)
@@ -5821,69 +5828,69 @@ Function OutputHostAlerts
 		WriteHTMLLine 3 0 "Alerts"
 	}
 
-	$GenerateDom0MemUsageAlerts      = "Not selected"
+	$GenerateDom0MemUsageAlerts = "Not selected"
 	[double]$WhenDom0MemUsageExceeds = 0
-	[int32]$WhenDom0ForLongerThan    = 0
+	[int32]$WhenDom0ForLongerThan = 0
 	
-	$dom0conf = Get-XenVm | `
-	Where-Object {$_.is_control_domain -and $_.domid -eq 0 -and $_.name_label -like "*$($XSHost.hostname)*"} | `
-	Get-XenVmProperty -XenProperty OtherConfig
+	$dom0conf = Get-XenVM | `
+			Where-Object { $_.is_control_domain -and $_.domid -eq 0 -and $_.name_label -like "*$($XSHost.hostname)*" } | `
+			Get-XenVMProperty -XenProperty OtherConfig
 	[xml]$XML = $dom0conf.perfmon
 
-	ForEach($Alert in $XML.config.variable)
+	ForEach ($Alert in $XML.config.variable)
 	{
-		If($Alert.Name.Value -eq "mem_usage")
+		If ($Alert.Name.Value -eq "mem_usage")
 		{
 			$GenerateDom0MemUsageAlerts = "Selected"
-			[double]$tmp                = $Alert.alarm_trigger_level.Value
-			$WhenDom0MemUsageExceeds    = $tmp * 100
-			$WhenDom0ForLongerThan      = $Alert.alarm_trigger_period.Value / 60
+			[double]$tmp = $Alert.alarm_trigger_level.Value
+			$WhenDom0MemUsageExceeds = $tmp * 100
+			$WhenDom0ForLongerThan = $Alert.alarm_trigger_period.Value / 60
 		}
 	}
 	
-	[int32]$AlertRepeatInterval          = 0
+	[int32]$AlertRepeatInterval = 0
 
-	$GenerateHostCPUUsageAlerts          = "Not selected"
-	[double]$WhenHostCPUUsageExceeds     = 0
-	[int32]$WhenHostCPUForLongerThan     = 0
+	$GenerateHostCPUUsageAlerts = "Not selected"
+	[double]$WhenHostCPUUsageExceeds = 0
+	[int32]$WhenHostCPUForLongerThan = 0
 
-	$GenerateHostNetworkUsageAlerts      = "Not selected"
-	[int32]$WhenHostNetworkUsageExceeds  = 0
+	$GenerateHostNetworkUsageAlerts = "Not selected"
+	[int32]$WhenHostNetworkUsageExceeds = 0
 	[int32]$WhenHostNetworkForLongerThan = 0
 
-	$GenerateHostMemoryUsageAlerts       = "Not selected"
-	[int32]$WhenHostMemUsageExceeds      = 0
-	[int32]$WhenHostMemForLongerThan     = 0
+	$GenerateHostMemoryUsageAlerts = "Not selected"
+	[int32]$WhenHostMemUsageExceeds = 0
+	[int32]$WhenHostMemForLongerThan = 0
 
 	$OtherConfig = ($XSHost | Get-XenHostProperty -XenProperty OtherConfig -EA 0)
 	
-	If($OtherConfig.ContainsKey("perfmon"))
+	If ($OtherConfig.ContainsKey("perfmon"))
 	{
 		[xml]$XML = $OtherConfig.perfmon
 			
-		ForEach($Alert in $XML.config.variable)
+		ForEach ($Alert in $XML.config.variable)
 		{
-			If($Alert.Name.Value -eq "cpu_usage")
+			If ($Alert.Name.Value -eq "cpu_usage")
 			{
 				$GenerateHostCPUUsageAlerts = "Selected"
-				[double]$tmp                = $Alert.alarm_trigger_level.Value
-				$WhenHostCPUUsageExceeds    = $tmp * 100
-				$WhenHostCPUForLongerThan   = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval        = $Alert.alarm_auto_inhibit_period.Value / 60
+				[double]$tmp = $Alert.alarm_trigger_level.Value
+				$WhenHostCPUUsageExceeds = $tmp * 100
+				$WhenHostCPUForLongerThan = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
-			ElseIf($Alert.Name.Value -eq "network_usage")
+			ElseIf ($Alert.Name.Value -eq "network_usage")
 			{
 				$GenerateHostNetworkUsageAlerts = "Selected"
-				$WhenHostNetworkUsageExceeds    = $Alert.alarm_trigger_level.Value / 1024
-				$WhenHostNetworkForLongerThan   = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval            = $Alert.alarm_auto_inhibit_period.Value / 60
+				$WhenHostNetworkUsageExceeds = $Alert.alarm_trigger_level.Value / 1024
+				$WhenHostNetworkForLongerThan = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
-			ElseIf($Alert.Name.Value -eq "memory_free_kib")
+			ElseIf ($Alert.Name.Value -eq "memory_free_kib")
 			{
 				$GenerateHostMemoryUsageAlerts = "Selected"
-				$WhenHostMemUsageExceeds       = $Alert.alarm_trigger_level.Value / 1024
-				$WhenHostMemForLongerThan      = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval           = $Alert.alarm_auto_inhibit_period.Value / 60
+				$WhenHostMemUsageExceeds = $Alert.alarm_trigger_level.Value / 1024
+				$WhenHostMemForLongerThan = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
 		}
 	}
@@ -5891,10 +5898,10 @@ Function OutputHostAlerts
 	If ($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		If($GenerateHostCPUUsageAlerts -eq "Selected" -or
-		   $GenerateHostNetworkUsageAlerts -eq "Selected" -or
-		   $GenerateHostMemoryUsageAlerts -eq "Selected" -or
-		   $GenerateDom0MemUsageAlerts -eq "Selected")
+		If ($GenerateHostCPUUsageAlerts -eq "Selected" -or
+			$GenerateHostNetworkUsageAlerts -eq "Selected" -or
+			$GenerateHostMemoryUsageAlerts -eq "Selected" -or
+			$GenerateDom0MemUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "$($AlertRepeatInterval) minutes"; }
 		}
@@ -5903,25 +5910,25 @@ Function OutputHostAlerts
 			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "Not Set"; }
 		}
 		$ScriptInformation += @{ Data = "Generate CPU usage alerts"; Value = $GenerateHostCPUUsageAlerts; }
-		If($GenerateHostCPUUsageAlerts -eq "Selected")
+		If ($GenerateHostCPUUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "     When CPU usage exceeds"; Value = "$($WhenHostCPUUsageExceeds) %"; }
 			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenHostCPUForLongerThan) minutes"; }
 		}
 		$ScriptInformation += @{ Data = "Generate network usage alerts"; Value = $GenerateHostNetworkUsageAlerts; }
-		If($GenerateHostNetworkUsageAlerts -eq "Selected")
+		If ($GenerateHostNetworkUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "     When network usage exceeds"; Value = "$($WhenHostNetworkUsageExceeds) KB/s"; }
 			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenHostNetworkForLongerThan) minutes"; }
 		}
 		$ScriptInformation += @{ Data = "Generate memory usage alerts"; Value = $GenerateHostMemoryUsageAlerts; }
-		If($GenerateHostMemoryUsageAlerts -eq "Selected")
+		If ($GenerateHostMemoryUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "     When memory usage exceeds"; Value = "$($WhenHostMemUsageExceeds) MB"; }
 			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenHostMemForLongerThan) minutes"; }
 		}
 		$ScriptInformation += @{ Data = "Generate control domain memory usage alerts"; Value = $GenerateDom0MemUsageAlerts; }
-		If($GenerateDom0MemUsageAlerts -eq "Selected")
+		If ($GenerateDom0MemUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "    When control domain memory usage exceeds "; Value = "$($WhenDom0MemUsageExceeds) %"; }
 			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenDom0ForLongerThan) minutes"; }
@@ -5947,10 +5954,10 @@ Function OutputHostAlerts
 	}
 	If ($Text)
 	{
-		If($GenerateHostCPUUsageAlerts -eq "Selected" -or
-		   $GenerateHostNetworkUsageAlerts -eq "Selected" -or
-		   $GenerateHostMemoryUsageAlerts -eq "Selected" -or
-		   $GenerateDom0MemUsageAlerts -eq "Selected")
+		If ($GenerateHostCPUUsageAlerts -eq "Selected" -or
+			$GenerateHostNetworkUsageAlerts -eq "Selected" -or
+			$GenerateHostMemoryUsageAlerts -eq "Selected" -or
+			$GenerateDom0MemUsageAlerts -eq "Selected")
 		{
 			Line 3 "Alert repeat interval`t`t`t`t: $($AlertRepeatInterval) minutes"
 		}
@@ -5959,25 +5966,25 @@ Function OutputHostAlerts
 			Line 3 "Alert repeat interval`t`t`t`t: Not Set"
 		}
 		Line 3 "Generate CPU usage alerts`t`t`t: " $GenerateHostCPUUsageAlerts
-		If($GenerateHostCPUUsageAlerts -eq "Selected")
+		If ($GenerateHostCPUUsageAlerts -eq "Selected")
 		{
 			Line 4 "When CPU usage exceeds    : " "$($WhenHostCPUUsageExceeds) %"
 			Line 4 "For longer than           : " "$($WhenHostCPUForLongerThan) minutes"
 		}
 		Line 3 "Generate network usage alerts`t`t`t: " $GenerateHostNetworkUsageAlerts
-		If($GenerateHostNetworkUsageAlerts -eq "Selected")
+		If ($GenerateHostNetworkUsageAlerts -eq "Selected")
 		{
 			Line 4 "When network usage exceeds: " "$($WhenHostNetworkUsageExceeds) KB/s"
 			Line 4 "For longer than           : " "$($WhenHostNetworkForLongerThan) minutes"
 		}
 		Line 3 "Generate memory usage alerts`t`t`t: " $GenerateHostMemoryUsageAlerts
-		If($GenerateHostMemoryUsageAlerts -eq "Selected")
+		If ($GenerateHostMemoryUsageAlerts -eq "Selected")
 		{
 			Line 4 "When memory usage exceeds : " "$($WhenHostMemUsageExceeds) MB"
 			Line 4 "For longer than           : " "$($WhenHostMemForLongerThan) minutes"
 		}
 		Line 3 "Generate control domain memory usage alerts`t: " $GenerateDom0MemUsageAlerts
-		If($GenerateDom0MemUsageAlerts -eq "Selected")
+		If ($GenerateDom0MemUsageAlerts -eq "Selected")
 		{
 			Line 4 "When control domain memory usage exceeds: " "$($WhenDom0MemUsageExceeds) %"
 			Line 4 "For longer than                         : " "$($WhenDom0ForLongerThan) minutes"
@@ -5987,10 +5994,10 @@ Function OutputHostAlerts
 	If ($HTML)
 	{
 		$rowdata = @()
-		If($GenerateHostCPUUsageAlerts -eq "Selected" -or
-		   $GenerateHostNetworkUsageAlerts -eq "Selected" -or
-		   $GenerateHostMemoryUsageAlerts -eq "Selected" -or
-		   $GenerateDom0MemUsageAlerts -eq "Selected")
+		If ($GenerateHostCPUUsageAlerts -eq "Selected" -or
+			$GenerateHostNetworkUsageAlerts -eq "Selected" -or
+			$GenerateHostMemoryUsageAlerts -eq "Selected" -or
+			$GenerateDom0MemUsageAlerts -eq "Selected")
 		{
 			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "$($AlertRepeatInterval) minutes", $htmlwhite)
 		}
@@ -5999,25 +6006,25 @@ Function OutputHostAlerts
 			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "Not set", $htmlwhite)
 		}
 		$rowdata += @(, ("Generate CPU usage alerts", ($htmlsilver -bor $htmlbold), $GenerateHostCPUUsageAlerts, $htmlwhite))
-		If($GenerateHostCPUUsageAlerts -eq "Selected")
+		If ($GenerateHostCPUUsageAlerts -eq "Selected")
 		{
 			$rowdata += @(, ("     When CPU usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenHostCPUUsageExceeds) %", $htmlwhite))
 			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenHostCPUForLongerThan) minutes", $htmlwhite))
 		}
-		$rowdata += @(, ("Generate network usage alerts", ($htmlsilver -bor $htmlbold),$GenerateHostNetworkUsageAlerts , $htmlwhite))
-		If($GenerateHostNetworkUsageAlerts -eq "Selected")
+		$rowdata += @(, ("Generate network usage alerts", ($htmlsilver -bor $htmlbold), $GenerateHostNetworkUsageAlerts , $htmlwhite))
+		If ($GenerateHostNetworkUsageAlerts -eq "Selected")
 		{
 			$rowdata += @(, ("     When network usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenHostNetworkUsageExceeds) KB/s", $htmlwhite))
 			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenHostNetworkForLongerThan) minutes", $htmlwhite))
 		}
 		$rowdata += @(, ("Generate memory usage alerts", ($htmlsilver -bor $htmlbold), $GenerateHostMemoryUsageAlerts, $htmlwhite))
-		If($GenerateHostMemoryUsageAlerts -eq "Selected")
+		If ($GenerateHostMemoryUsageAlerts -eq "Selected")
 		{
 			$rowdata += @(, ("     When memory usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenHostMemUsageExceeds) MB", $htmlwhite))
 			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenHostMemForLongerThan) minutes", $htmlwhite))
 		}
 		$rowdata += @(, ("Generate control domain memory usage alerts", ($htmlsilver -bor $htmlbold), $GenerateDom0MemUsageAlerts, $htmlwhite))
-		If($GenerateDom0MemUsageAlerts -eq "Selected")
+		If ($GenerateDom0MemUsageAlerts -eq "Selected")
 		{
 			$rowdata += @(, ("     When control domain memory usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenDom0MemUsageExceeds) %", $htmlwhite))
 			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenDom0ForLongerThan) minutes", $htmlwhite))
@@ -7098,7 +7105,7 @@ Function OutputHostNetworking
 			@{Name = 'MTU'; Expression = { $item.MTU } }
 		}
 	}
-
+	$networks = $networks | Sort-Object -Property Name
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 3 0 "Networking"
@@ -7264,9 +7271,27 @@ Function OutputHostNICs
 				$nicDuplex = "-"
 				$nicSpeed = "-"
 			}
+			If ("fcoe" -in $item.capabilities)
+			{
+				$fcoeCapable = "Yes"
+			}
+			Else
+			{
+				$fcoeCapable = "No"
+			}
+
+			If ("sriov" -in $item.capabilities)
+			{
+				$sriovCapable = "Yes"
+			}
+			Else
+			{
+				$sriovCapable = "No"
+			}
 
 			$nics += $Item | Select-Object -Property `
 			@{Name = 'Name'; Expression = { $_.device.Replace("eth", "NIC ") } },
+			@{Name = 'DeviceID'; Expression = { $_.device } },
 			MAC,
 			@{Name = 'LinkStatus'; Expression = { $linkStatus } },
 			@{Name = 'Speed'; Expression = { $nicSpeed } },
@@ -7274,10 +7299,11 @@ Function OutputHostNICs
 			@{Name = 'Vendor'; Expression = { "$($pifMetrics.vendor_name)" } },
 			@{Name = 'Device'; Expression = { "$($pifMetrics.device_name)" } },
 			@{Name = 'PCIBusPath'; Expression = { "$($pifMetrics.pci_bus_path)" } },
-			@{Name = 'FCoE'; Expression = { ""; <#UNDEFINED#> } },
-			@{Name = 'SRIOV'; Expression = { ""; <#UNDEFINED#> } }
+			@{Name = 'FCoE'; Expression = { $fcoeCapable; } },
+			@{Name = 'SRIOV'; Expression = { $sriovCapable; } }
 		}
 	}
+	$nics = $nics | Sort-Object -Property DeviceID
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 3 0 "NICs"
@@ -7584,18 +7610,13 @@ Function ProcessVMs
 		$VMMetrics = $VM.guest_metrics | Get-XenVMGuestMetrics
 		if ([String]::IsNullOrEmpty($VMMetrics) -or [String]::IsNullOrEmpty($($VMMetrics.os_version)) -or $VMMetrics.os_version.Count -lt 1 -or [String]::IsNullOrEmpty($($VMMetrics.os_version.name)))
 		{
-			$VMOSName = "N/A"
+			$VMOSName = "Unknown"
 		}
 		else 
 		{
 			$VMOSName = $VMMetrics.os_version.name
 		}
 
-		<#$VMOSName = $(try { ($VM.guest_metrics | Get-XenVMGuestMetrics).os_version.name } catch { "N/A" })
-		If (!$?)
-		{
-			$VMOSName = "N/A"
-		}#>
 		$VMHostData = $VM.resident_on | Get-XenHost
 		if ([String]::IsNullOrEmpty($VMHostData) -or [String]::IsNullOrEmpty($($VMHostData.name_label)))
 		{
@@ -7646,7 +7667,7 @@ Function OutputVM
 	Param([object]$VM, [string]$VMOSName, [string]$VMHost, [bool]$VMFirst)
 	
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General"
-	If ($VMOSName -ne "N/A")
+	If ($VMOSName -ne "Unknown")
 	{
 		#remove the pipe symbol from the $VMOSName variable
 		$pos = -1
@@ -7675,7 +7696,11 @@ Function OutputVM
 		$bootorder[$c - 1] = "[$c] $($bootorder[$c-1])"
 	}
 
-	If ($vm.platform["cores-per-socket"] -gt 1)
+	If ($null -eq $($vm.platform["cores-per-socket"]))
+	{
+		$vCPUcoreText = "1 core"
+	}
+	ElseIf ($vm.platform["cores-per-socket"] -gt 1)
 	{
 		$vCPUcoreText = "$($vm.platform["cores-per-socket"]) cores"
 	}
@@ -7944,7 +7969,11 @@ Function OutputVMCPU
 	#VCPUs_at_startup	8
 	#VCPUs_max		8
 
-	If ($vm.platform["cores-per-socket"] -gt 1)
+	If ($null -eq $($vm.platform["cores-per-socket"]))
+	{
+		$vCPUcoreText = "1 core"
+	}
+	ElseIf ($vm.platform["cores-per-socket"] -gt 1)
 	{
 		$vCPUcoreText = "$($vm.platform["cores-per-socket"]) cores"
 	}
@@ -7985,39 +8014,39 @@ Function OutputVMCPU
 	{
 		$tmp = $vm.VCPUs_params["weight"]
 		
-		If($tmp -eq 1)
+		If ($tmp -eq 1)
 		{
 			$vCPUPriority = "Lowest"
 		}
-		ElseIf($tmp -eq 4)
+		ElseIf ($tmp -eq 4)
 		{
 			$vCPUPriority = "4 (Second tick on the slider)"
 		}
-		ElseIf($tmp -eq 16)
+		ElseIf ($tmp -eq 16)
 		{
 			$vCPUPriority = "16 (third tick on the slider)"
 		}
-		ElseIf($tmp -eq 64)
+		ElseIf ($tmp -eq 64)
 		{
 			$vCPUPriority = "64 (fourth tick on the slider)"
 		}
-		ElseIf($tmp -eq 256)
+		ElseIf ($tmp -eq 256)
 		{
 			$vCPUPriority = "Normal"
 		}
-		ElseIf($tmp -eq 1024)
+		ElseIf ($tmp -eq 1024)
 		{
 			$vCPUPriority = "1024 (sixth tick on the slider)"
 		}
-		ElseIf($tmp -eq 4096)
+		ElseIf ($tmp -eq 4096)
 		{
 			$vCPUPriority = "4096 (seventh tick on the slider)"
 		}
-		ElseIf($tmp -eq 16384)
+		ElseIf ($tmp -eq 16384)
 		{
 			$vCPUPriority = "16384 (eigth tick on the slider)"
 		}
-		ElseIf($tmp -eq 65535)
+		ElseIf ($tmp -eq 65535)
 		{
 			$vCPUPriority = "Highest"
 		}
@@ -8066,7 +8095,7 @@ Function OutputVMCPU
 	If ($HTML)
 	{
 		$rowdata = @()
-		$columnHeaders = @("Number of vCPUs", ($htmlsilver -bor $htmlbold),"$($VM.VCPUs_max)", $htmlwhite)
+		$columnHeaders = @("Number of vCPUs", ($htmlsilver -bor $htmlbold), "$($VM.VCPUs_max)", $htmlwhite)
 		$rowdata += @(, ("Topology", ($htmlsilver -bor $htmlbold), $vCPUText, $htmlwhite))
 		$rowdata += @(, ("vCPU priority for this virtual machine", ($htmlsilver -bor $htmlbold), $vCPUPriority, $htmlwhite))
 
@@ -8196,7 +8225,7 @@ Function OutputVMStartOptions
 	If ($HTML)
 	{
 		$rowdata = @()
-		$columnHeaders = @("Start order", ($htmlsilver -bor $htmlbold),$StartOrder, $htmlwhite)
+		$columnHeaders = @("Start order", ($htmlsilver -bor $htmlbold), $StartOrder, $htmlwhite)
 		$rowdata += @(, ("Attempt to start next VM after", ($htmlsilver -bor $htmlbold), "$($StartNextVMAfter) seconds", $htmlwhite))
 
 		$msg = ""
@@ -8224,49 +8253,49 @@ Function OutputVMAlerts
 		WriteHTMLLine 3 0 "Alerts"
 	}
 	
-	[int32]$AlertRepeatInterval        = 0
+	[int32]$AlertRepeatInterval = 0
 
-	$GenerateVMCPUUsageAlerts          = "Not selected"
-	[double]$WhenVMCPUUsageExceeds     = 0
-	[int32]$WhenVMCPUForLongerThan     = 0
+	$GenerateVMCPUUsageAlerts = "Not selected"
+	[double]$WhenVMCPUUsageExceeds = 0
+	[int32]$WhenVMCPUForLongerThan = 0
 
-	$GenerateVMNetworkUsageAlerts      = "Not selected"
-	[int32]$WhenVMNetworkUsageExceeds  = 0
+	$GenerateVMNetworkUsageAlerts = "Not selected"
+	[int32]$WhenVMNetworkUsageExceeds = 0
 	[int32]$WhenVMNetworkForLongerThan = 0
 
-	$GenerateVMDiskUsageAlerts         = "Not selected"
-	[int32]$WhenVMMemUsageExceeds      = 0
-	[int32]$WhenVMMemForLongerThan     = 0
+	$GenerateVMDiskUsageAlerts = "Not selected"
+	[int32]$WhenVMMemUsageExceeds = 0
+	[int32]$WhenVMMemForLongerThan = 0
 
 	$OtherConfig = ($VM | Get-XenVMProperty -XenProperty OtherConfig -EA 0)
 
-	If($OtherConfig.ContainsKey("perfmon"))
+	If ($OtherConfig.ContainsKey("perfmon"))
 	{
 		[xml]$XML = $OtherConfig.perfmon
 			
-		ForEach($Alert in $XML.config.variable)
+		ForEach ($Alert in $XML.config.variable)
 		{
-			If($Alert.Name.Value -eq "cpu_usage")
+			If ($Alert.Name.Value -eq "cpu_usage")
 			{
 				$GenerateVMCPUUsageAlerts = "Selected"
-				[double]$tmp              = $Alert.alarm_trigger_level.Value
-				$WhenVMCPUUsageExceeds    = $tmp * 100
-				$WhenVMCPUForLongerThan   = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval      = $Alert.alarm_auto_inhibit_period.Value / 60
+				[double]$tmp = $Alert.alarm_trigger_level.Value
+				$WhenVMCPUUsageExceeds = $tmp * 100
+				$WhenVMCPUForLongerThan = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
-			ElseIf($Alert.Name.Value -eq "network_usage")
+			ElseIf ($Alert.Name.Value -eq "network_usage")
 			{
 				$GenerateVMNetworkUsageAlerts = "Selected"
-				$WhenVMNetworkUsageExceeds    = $Alert.alarm_trigger_level.Value / 1024
-				$WhenVMNetworkForLongerThan   = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval          = $Alert.alarm_auto_inhibit_period.Value / 60
+				$WhenVMNetworkUsageExceeds = $Alert.alarm_trigger_level.Value / 1024
+				$WhenVMNetworkForLongerThan = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
-			ElseIf($Alert.Name.Value -eq "disk_usage")
+			ElseIf ($Alert.Name.Value -eq "disk_usage")
 			{
 				$GenerateVMDiskUsageAlerts = "Selected"
-				$WhenVMMemUsageExceeds     = $Alert.alarm_trigger_level.Value / 1024
-				$WhenVMMemForLongerThan    = $Alert.alarm_trigger_period.Value / 60
-				$AlertRepeatInterval       = $Alert.alarm_auto_inhibit_period.Value / 60
+				$WhenVMMemUsageExceeds = $Alert.alarm_trigger_level.Value / 1024
+				$WhenVMMemForLongerThan = $Alert.alarm_trigger_period.Value / 60
+				$AlertRepeatInterval = $Alert.alarm_auto_inhibit_period.Value / 60
 			}
 		}
 	}
@@ -8274,9 +8303,9 @@ Function OutputVMAlerts
 	If ($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		If($GenerateVMCPUUsageAlerts -eq "Selected" -or
-		   $GenerateVMNetworkUsageAlerts -eq "Selected" -or
-		   $GenerateVMDiskUsageAlerts -eq "Selected")
+		If ($GenerateVMCPUUsageAlerts -eq "Selected" -or
+			$GenerateVMNetworkUsageAlerts -eq "Selected" -or
+			$GenerateVMDiskUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "$($AlertRepeatInterval) minutes"; }
 		}
@@ -8285,19 +8314,19 @@ Function OutputVMAlerts
 			$ScriptInformation += @{ Data = "Alert repeat interval"; Value = "Not Set"; }
 		}
 		$ScriptInformation += @{ Data = "Generate CPU usage alerts"; Value = $GenerateVMCPUUsageAlerts; }
-		If($GenerateVMCPUUsageAlerts -eq "Selected")
+		If ($GenerateVMCPUUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "     When CPU usage exceeds"; Value = "$($WhenVMCPUUsageExceeds) %"; }
 			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenVMCPUForLongerThan) minutes"; }
 		}
 		$ScriptInformation += @{ Data = "Generate network usage alerts"; Value = $GenerateVMNetworkUsageAlerts; }
-		If($GenerateVMNetworkUsageAlerts -eq "Selected")
+		If ($GenerateVMNetworkUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "     When network usage exceeds"; Value = "$($WhenVMNetworkUsageExceeds) KB/s"; }
 			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenVMNetworkForLongerThan) minutes"; }
 		}
 		$ScriptInformation += @{ Data = "Generate Disk usage alerts"; Value = $GenerateVMDiskUsageAlerts; }
-		If($GenerateVMDiskUsageAlerts -eq "Selected")
+		If ($GenerateVMDiskUsageAlerts -eq "Selected")
 		{
 			$ScriptInformation += @{ Data = "     When Disk usage exceeds"; Value = "$($WhenVMMemUsageExceeds) KB/s"; }
 			$ScriptInformation += @{ Data = "     For longer than"; Value = "$($WhenVMMemForLongerThan) minutes"; }
@@ -8323,9 +8352,9 @@ Function OutputVMAlerts
 	}
 	If ($Text)
 	{
-		If($GenerateVMCPUUsageAlerts -eq "Selected" -or
-		   $GenerateVMNetworkUsageAlerts -eq "Selected" -or
-		   $GenerateVMDiskUsageAlerts -eq "Selected")
+		If ($GenerateVMCPUUsageAlerts -eq "Selected" -or
+			$GenerateVMNetworkUsageAlerts -eq "Selected" -or
+			$GenerateVMDiskUsageAlerts -eq "Selected")
 		{
 			Line 3 "Alert repeat interval             : $($AlertRepeatInterval) minutes"
 		}
@@ -8334,19 +8363,19 @@ Function OutputVMAlerts
 			Line 3 "Alert repeat interval             : Not Set"
 		}
 		Line 3 "Generate CPU usage alerts         : " $GenerateVMCPUUsageAlerts
-		If($GenerateVMCPUUsageAlerts -eq "Selected")
+		If ($GenerateVMCPUUsageAlerts -eq "Selected")
 		{
 			Line 4 "When CPU usage exceeds    : " "$($WhenVMCPUUsageExceeds) %"
 			Line 4 "For longer than           : " "$($WhenVMCPUForLongerThan) minutes"
 		}
 		Line 3 "Generate network usage alerts     : " $GenerateVMNetworkUsageAlerts
-		If($GenerateVMNetworkUsageAlerts -eq "Selected")
+		If ($GenerateVMNetworkUsageAlerts -eq "Selected")
 		{
 			Line 4 "When network usage exceeds: " "$($WhenVMNetworkUsageExceeds) KB/s"
 			Line 4 "For longer than           : " "$($WhenVMNetworkForLongerThan) minutes"
 		}
 		Line 3 "Generate Disk usage alerts        : " $GenerateVMDiskUsageAlerts
-		If($GenerateVMDiskUsageAlerts -eq "Selected")
+		If ($GenerateVMDiskUsageAlerts -eq "Selected")
 		{
 			Line 4 "When Disk usage exceeds   : " "$($WhenVMMemUsageExceeds) KB/s"
 			Line 4 "For longer than           : " "$($WhenVMMemForLongerThan) minutes"
@@ -8356,9 +8385,9 @@ Function OutputVMAlerts
 	If ($HTML)
 	{
 		$rowdata = @()
-		If($GenerateVMCPUUsageAlerts -eq "Selected" -or
-		   $GenerateVMNetworkUsageAlerts -eq "Selected" -or
-		   $GenerateVMDiskUsageAlerts -eq "Selected")
+		If ($GenerateVMCPUUsageAlerts -eq "Selected" -or
+			$GenerateVMNetworkUsageAlerts -eq "Selected" -or
+			$GenerateVMDiskUsageAlerts -eq "Selected")
 		{
 			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "$($AlertRepeatInterval) minutes", $htmlwhite)
 		}
@@ -8367,19 +8396,19 @@ Function OutputVMAlerts
 			$columnHeaders = @("Alert repeat interval", ($htmlsilver -bor $htmlbold), "Not set", $htmlwhite)
 		}
 		$rowdata += @(, ("Generate CPU usage alerts", ($htmlsilver -bor $htmlbold), $GenerateVMCPUUsageAlerts, $htmlwhite))
-		If($GenerateVMCPUUsageAlerts -eq "Selected")
+		If ($GenerateVMCPUUsageAlerts -eq "Selected")
 		{
 			$rowdata += @(, ("     When CPU usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenVMCPUUsageExceeds) %", $htmlwhite))
 			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenVMCPUForLongerThan) minutes", $htmlwhite))
 		}
-		$rowdata += @(, ("Generate network usage alerts", ($htmlsilver -bor $htmlbold),$GenerateVMNetworkUsageAlerts , $htmlwhite))
-		If($GenerateVMNetworkUsageAlerts -eq "Selected")
+		$rowdata += @(, ("Generate network usage alerts", ($htmlsilver -bor $htmlbold), $GenerateVMNetworkUsageAlerts , $htmlwhite))
+		If ($GenerateVMNetworkUsageAlerts -eq "Selected")
 		{
 			$rowdata += @(, ("     When network usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenVMNetworkUsageExceeds) KB/s", $htmlwhite))
 			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenVMNetworkForLongerThan) minutes", $htmlwhite))
 		}
 		$rowdata += @(, ("Generate Disk usage alerts", ($htmlsilver -bor $htmlbold), $GenerateVMDiskUsageAlerts, $htmlwhite))
-		If($GenerateVMDiskUsageAlerts -eq "Selected")
+		If ($GenerateVMDiskUsageAlerts -eq "Selected")
 		{
 			$rowdata += @(, ("     When Disk usage exceeds", ($htmlsilver -bor $htmlbold), "$($WhenVMMemUsageExceeds) KB/s", $htmlwhite))
 			$rowdata += @(, ("     For longer than", ($htmlsilver -bor $htmlbold), "$($WhenVMMemForLongerThan) minutes", $htmlwhite))
@@ -8410,26 +8439,26 @@ Function OutputVMHomeServer
 		WriteHTMLLine 3 0 "Home Server"
 	}
 	
-	If($VM.affinity.opaque_ref -eq "OpaqueRef:NULL")
+	If ($VM.affinity.opaque_ref -eq "OpaqueRef:NULL")
 	{
 		#there is no home server
 		$HomeServerText = "Don't assign this VM a home server"
-		$HomeServer     = ""
+		$HomeServer = ""
 		
 		#find host currently on
 		$HomeServerRef = $VM.resident_on.opaque_ref
 		
 		$results = Get-XenHost -Ref $HomeServerRef -EA 0
 		
-		If(!$?)
+		If (!$?)
 		{
 			#unable to retrieve the running host
-			$HomeServer     = "Unable to retrieve the running host"
+			$HomeServer = "Unable to retrieve the running host"
 		}
 		Else
 		{
 			#we have the home server
-			$HomeServer     = "Currently running on host $($results.name_label)"
+			$HomeServer = "Currently running on host $($results.name_label)"
 		}
 	}
 	Else
@@ -8438,17 +8467,17 @@ Function OutputVMHomeServer
 		
 		$results = Get-XenHost -Ref $HomeServerRef -EA 0
 		
-		If(!$?)
+		If (!$?)
 		{
 			#unable to retrieve the home server
 			$HomeServerText = "Unable to retrieve Home Server"
-			$HomeServer     = ""
+			$HomeServer = ""
 		}
 		Else
 		{
 			#we have the home server
 			$HomeServerText = "Place the VM on this server"
-			$HomeServer     = $results.name_label
+			$HomeServer = $results.name_label
 		}
 	}
 
@@ -8644,7 +8673,7 @@ Function OutputVMAdvancedOptions
 		$rowdata = @()
 	}
 	
-	If($ShadowValue -eq 1)
+	If ($ShadowValue -eq 1)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -8662,7 +8691,7 @@ Function OutputVMAdvancedOptions
 			$rowdata += @(, ("     Shadow memory multiplier", ($htmlsilver -bor $htmlbold), $ShadowValue.ToString(), $htmlwhite))
 		}
 	}
-	ElseIf($ShadowValue -eq 4)
+	ElseIf ($ShadowValue -eq 4)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -8737,35 +8766,32 @@ Function OutputVMStorage
 	Param([object]$VM, [string]$VMHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Storage"
 	$VMName = $VM.Name_Label
-	$vbds = $Vm.VBDs | Get-XenVBD
+	$vbds = $Vm.VBDs | Get-XenVBD -EA 0
 	
 	$storages = @()
 	ForEach ($item in $($vbds | Where-Object { $_.type -ne "CD" } | Sort-Object -Property userdevice))
 	{
-		$vdi = $item.VDI | Get-XenVDI | Where-Object { $_.is_a_snapshot -like $false }
-		$sr = $vdi.SR | Get-XenSR
+		$vdi = $item.VDI | Get-XenVDI -EA 0 | Where-Object { $_.is_a_snapshot -like $false }
+		$sr = $vdi.SR | Get-XenSR -EA 0
 		If ($vdi.read_only -like $true)
 		{
 			$readonly = "Yes"
 		}
-		Else
-		{
+		Else		{
 			$readonly = "No"
 		}
 		If ($item.currently_attached -like $true)
 		{
 			$active = "Yes"
 		}
-		Else
-		{
+		Else		{
 			$active = "No"
 		}
 		If ([String]::IsNullOrEmpty($($item.device)))
 		{
 			$device = "<unknown>"
 		}
-		Else
-		{
+		Else		{
 			$device = '/dev/{0}' -f $item.device
 		}
 		$srText = '{0} on {1}' -f $sr.name_label, $VMHost
@@ -8780,7 +8806,7 @@ Function OutputVMStorage
 		@{Name = 'Active'; Expression = { $active } },
 		@{Name = 'DevicePath'; Expression = { $device } }
 	}
-
+	$storages = $storages | Sort-Object -Property Position, Name
 	$storageCount = $storages.Count
 
 	If ($MSWord -or $PDF)
@@ -8911,50 +8937,46 @@ Function OutputVMNIC
 	Param([object] $VM)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Network"
 
-	$xenVMVIFs = @($vm.VIFs | Get-XenVIF)
+	$xenVMVIFs = @($vm.VIFs | Get-XenVIF -EA 0)
 	$nrVIFs = $xenVMVIFs.Count
-
-	foreach ($vif in $xenVMVIFs)
+	$networks = @()
+	ForEach ($Item in $xenVMVIFs)
 	{
-		[System.Collections.Hashtable[]] $xenVMNic = @()
-		$network = $vif.network | Get-XenNetwork
-		$xenVMNic += @{ Data = "MAC"; Value = $($vif.MAC) }
-		$xenVMNic += @{ Data = "Device"; Value = $($vif.device) }
-		$xenVMNic += @{ Data = "MTU"; Value = $($vif.MTU) }
-		$xenVMNic += @{ Data = "MACAutogenerated"; Value = $($vif.MAC_autogenerated) }
-		$xenVMNic += @{ Data = "NetworkNameLabel"; Value = $($network.name_label) }
-		try
+		$limit = "QoS disabled"
+		if ($item.qos_algorithm_type -like "ratelimit")
 		{
-			$pif = $network.PIFs | Get-XenPIF | Where-Object { $_.host -eq $vm.scheduled_to_be_resident_on -or $_.host -eq $vm.resident_on }
-			if ($null -ne $pif -and $null -ne $pif.VLAN -and $pif.VLAN -ge 0)
-			{
-				$xenVMNic += @{ Data = "NetworkVLAN"; Value = $($pif.VLAN) }
-			}
-			else
-			{
-				$xenVMNic += @{ Data = "NetworkVLAN"; Value = "-" }
-			}
-		    
+			$limit = 'QoS limit of {0} kbps' -f $item.qos_algorithm_params["kbps"]
 		}
-		catch
+		If ($item.currently_attached -like $true)
 		{
-			$xenVMNic += @{ Data = "NetworkVLAN"; Value = "-" }
+			$active = "Yes"
 		}
-	}
-
+		Else
+		{
+			$active = "No"
+		}
+		$networks += $item | Select-Object -Property `
+		@{Name = 'Device'; Expression = { "$($Item.device)" } },
+		@{Name = 'MAC'; Expression = { "$($Item.MAC)" } },
+		@{Name = 'MACautogenerated'; Expression = { "$($Item.MAC_autogenerated)" } },
+		@{Name = 'limit'; Expression = { $limit } },
+		@{Name = 'IPAddress'; Expression = { "$(($Item.ipv4_addresses + $Item.ipv6_addresses) -join ", ")" } },
+		@{Name = 'Active'; Expression = { $active } }
+	}	
+	$networks = $networks | Sort-Object -Property Device
 	$VMName = $VM.Name_Label
 
 	If ($MSWord -or $PDF)
 	{
-		WriteWordLine 3 0 "Network"
+		WriteWordLine 3 0 "Networking"
 	}
 	If ($Text)
 	{
-		Line 2 "Network"
+		Line 2 "Networking"
 	}
 	If ($HTML)
 	{
-		WriteHTMLLine 3 0 "Network"
+		WriteHTMLLine 3 0 "Networking"
 	}
 
 	If ($nrVIFs -lt 1)
@@ -8962,16 +8984,16 @@ Function OutputVMNIC
 
 		If ($MSWord -or $PDF)
 		{
-			WriteWordLine 0 1 "There are no NICs configured for VM $VMName"
+			WriteWordLine 0 1 "There are no Virtual Network Interfaces configured for VM $VMName"
 		}
 		If ($Text)
 		{
-			Line 3 "There are no NICs configured for VM $VMName"
+			Line 3 "There are no Virtual Network Interfaces configured for VM $VMName"
 			Line 0 ""
 		}
 		If ($HTML)
 		{
-			WriteHTMLLine 0 1 "There are no NICs configured for VM $VMName"
+			WriteHTMLLine 0 1 "There are no Virtual Network Interfaces configured for VM $VMName"
 		}
 	}
 	Else
@@ -8990,68 +9012,34 @@ Function OutputVMNIC
 			$columnHeaders = @("Number of NICs", ($htmlsilver -bor $htmlbold), "$nrVIFs", $htmlwhite)
 			$rowdata = @()
 		}
-
-		ForEach ($Item in $xenVMVIFs)
+		ForEach ($Item in $networks)
 		{
-			$network = $vif.network | Get-XenNetwork -ErrorAction SilentlyContinue
-			try
-			{
-				$pif = $network.PIFs | Get-XenPIF | Where-Object { $_.host -eq $vm.scheduled_to_be_resident_on -or $_.host -eq $vm.resident_on }
-				If ($null -ne $pif -and $null -ne $pif.VLAN -and $pif.VLAN -ge 0)
-				{
-					$vlan = $pif.VLAN
-				}
-				Else
-				{
-					$vlan = $null
-				}
-			}
-			catch
-			{
-				$vlan = $null
-			}
-
 			If ($MSWord -or $PDF)
 			{
 				$ScriptInformation += @{ Data = "Device"; Value = "$($Item.device)"; }
 				$ScriptInformation += @{ Data = "  MAC address"; Value = "$($Item.MAC)"; }
-				$ScriptInformation += @{ Data = "  MAC autogenerated"; Value = "$($Item.MAC_autogenerated)"; }
-				$ScriptInformation += @{ Data = "  MTU size"; Value = "$($Item.MTU)"; }
-				If (-Not [String]::IsNullOrEmpty($($network.name_label)))
-				{
-					$ScriptInformation += @{ Data = "  Network name"; Value = "$($network.name_label)"; }
-				}
-				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0)
-				{
-					$ScriptInformation += @{ Data = "  Network VLAN"; Value = "$($vlan)"; }
-				}
+				$ScriptInformation += @{ Data = "  MAC autogenerated"; Value = "$($Item.MACautogenerated)"; }
+				$ScriptInformation += @{ Data = "  Limit"; Value = "$($Item.limit)"; }
+				$ScriptInformation += @{ Data = "  IP Address"; Value = "$($Item.IPAddress)"; }
+				$ScriptInformation += @{ Data = "  Active"; Value = "$($Item.Active)"; }
 			}
 			If ($Text)
 			{
 				Line 3 "Device`t`t`t: " "$($Item.device)"
 				Line 3 "  MAC address`t`t: " "$($Item.MAC)"
-				Line 3 "  MAC autogenerated`t: " "$($Item.MAC_autogenerated)"
-				Line 3 "  MTU size`t`t: " "$($Item.MTU)"
-				Line 3 "  Network name`t`t: " "$($network.name_label)"
-				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0)
-				{
-					Line 3 "  Network VLAN`t`t: " "$($vlan)"
-				}
+				Line 3 "  MAC autogenerated`t: " "$($Item.MACautogenerated)"
+				Line 3 "  Limit`t`t`t: " "$($Item.limit)"
+				Line 3 "  IP Address`t`t: " "$($Item.IPAddress)"
+				Line 3 "  Active`t`t: " "$($Item.Active)"
 			}
 			If ($HTML)
 			{
 				$rowdata += @(, ("Device", ($htmlsilver -bor $htmlbold), "$($Item.device)", $htmlwhite))
 				$rowdata += @(, ("  MAC address", ($htmlsilver -bor $htmlbold), "$($Item.MAC)", $htmlwhite))
-				$rowdata += @(, ("  MAC autogenerated", ($htmlsilver -bor $htmlbold), "$($Item.MAC_autogenerated)", $htmlwhite))
-				$rowdata += @(, ("  MTU size", ($htmlsilver -bor $htmlbold), "$($Item.MTU)", $htmlwhite))
-				If (-Not [String]::IsNullOrEmpty($($network.name_label)))
-				{
-					$rowdata += @(, ("  Network name", ($htmlsilver -bor $htmlbold), "$($network.name_label)", $htmlwhite))
-				}
-				If (-Not [String]::IsNullOrEmpty($vlan) -and $vlan -lt 0)
-				{
-					$rowdata += @(, ("  Network VLAN", ($htmlsilver -bor $htmlbold), $($vlan), $htmlwhite))
-				}
+				$rowdata += @(, ("  MAC autogenerated", ($htmlsilver -bor $htmlbold), "$($Item.MACautogenerated)", $htmlwhite))
+				$rowdata += @(, ("  Limit", ($htmlsilver -bor $htmlbold), "$($Item.limit)", $htmlwhite))
+				$rowdata += @(, ("  IP Address", ($htmlsilver -bor $htmlbold), "$($Item.IPAddress)", $htmlwhite))
+				$rowdata += @(, ("  Active", ($htmlsilver -bor $htmlbold), "$($Item.Active)", $htmlwhite))
 			}
 		}
 		
