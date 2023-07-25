@@ -38,6 +38,10 @@
 	
 	If entered as an IP address, the script attempts o determine and use the actual 
 	pool or poolmaster name.
+	
+	ServerName should be the Pool Master. If you use a Slave host, the script attempts 
+	to determine the Pool Master and then makes a connection attempt to the Pool Master. 
+	If successful, the script continues. If not successful, the script ends.
 .PARAMETER User
 	Username to use for the connection to the XenServer Pool.
 .PARAMETER HTML
@@ -428,7 +432,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.016
+	VERSION: 0.017
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
 	LASTEDIT: July 25, 2023
 #>
@@ -541,6 +545,36 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.017
+#	Add Function OutputPoolGeneralOverview
+#		This function is for what you see when looking at Pool General Properties, not a pool's Properties, General
+#		Function OutputPoolGeneral is for the pool's Properties, General
+#	Rearranged the Pool output functions to the order seen in the Console:
+#		Pool General Properties
+#			General
+#			Updates
+#			Management Interfaces
+#		Pool Properties
+#			General
+#			Custom Fields
+#			Email Options
+#			Power On
+#			Live Patching
+#			Network Options
+#			Clustering
+#	Added stub Functions for the remaining Pool tabs
+#		Function OutputPoolMemory
+#		Function OutputPoolStorage
+#		Function OutputPoolNetworking
+#		Function OutputPoolGPU
+#		Function OutputPoolHA
+#		Function OutputPoolWLB
+#		Function OutputPoolUsers
+#	Updated Functions OutputPoolLivePatching, OutputPoolNetworkOptions, and OutputPoolClustering 
+#		to change the MSWord/PDF/HTML output to tables
+#	Updated Function OutputPoolEmailOptions for better output
+#	Updated the help text for the ServerName parameter
 #
 #.016
 #	Change the Disconnect message from "Disconnect from XenServer to
@@ -735,7 +769,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.015'
+$script:MyVersion = '0.017'
 $Script:ScriptName = "XS_Inventory.ps1"
 $tmpdate = [datetime] "07/25/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
@@ -4335,6 +4369,9 @@ Function ProcessPool
 			WriteHTMLLine 1 0 "$($Script:XSPool.name_label) Pool"
 		}
 		
+		OutputPoolGeneralOverview
+		OutputPoolUpdates
+		OutputPoolManagementInterfaces
 		OutputPoolGeneral
 		OutputPoolCustomFields
 		OutputPoolEmailOptions
@@ -4342,14 +4379,13 @@ Function ProcessPool
 		OutputPoolLivePatching
 		OutputPoolNetworkOptions
 		OutputPoolClustering
-		OutputPoolUpdates
-		OutputPoolManagementInterfaces
 	}
 }
 
-Function OutputPoolGeneral
+Function OutputPoolGeneralOverview
 {
-	Write-Verbose "$(Get-Date -Format G): `tOutput Pool General"
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool General Overview"
+	#This is what you see when look at Pool General Properties, not a pool's Properties, General
 	[array]$xtags = @()
 	ForEach ($tag in $Script:XSPool.tags)
 	{
@@ -4399,10 +4435,9 @@ Function OutputPoolGeneral
 	}
 
 
-	Write-Verbose "$(Get-Date -Format G): `tOutput Pool data"
 	If ($MSWord -or $PDF)
 	{
-		WriteWordLine 2 0 "General"
+		WriteWordLine 2 0 "General Overview"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Pool name"; Value = $Script:XSPool.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
@@ -4432,7 +4467,7 @@ Function OutputPoolGeneral
 	}
 	If ($Text)
 	{
-		Line 1 "General"
+		Line 1 "General Overview"
 		Line 2 "Pool name`t`t: " $Script:XSPool.name_label
 		Line 2 "Description`t`t: " $Script:XSPool.name_description
 		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
@@ -4447,7 +4482,7 @@ Function OutputPoolGeneral
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
-		WriteHTMLLine 2 0 "General"
+		WriteHTMLLine 2 0 "General Overview"
 		$rowdata = @()
 		$columnHeaders = @("Pool name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
@@ -4457,6 +4492,358 @@ Function OutputPoolGeneral
 		$rowdata += @(, ('Number of Sockets', ($htmlsilver -bor $htmlbold), $NumSockets, $htmlwhite))
 		$rowdata += @(, ('XenServer Version', ($htmlsilver -bor $htmlbold), $Script:PoolMasterInfo.software_version.product_version_text_short, $htmlwhite))
 		$rowdata += @(, ('UUID', ($htmlsilver -bor $htmlbold), $Script:XSPool.uuid, $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolUpdates
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Updates"
+	$Updates = Get-XenPoolPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | Select-Object name_label, version | Sort-Object name_label
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $WordTable = @();
+		
+		WriteWordLine 2 0 "Updates" 
+		
+		ForEach ($tmp in $Updates)
+		{
+			$WordTableRowHash = @{ 
+				Update = "$($tmp.name_label) (version $($tmp.version))";
+			}
+			$WordTable += $WordTableRowHash;
+		}
+		## Add the table to the document, using the hashtable (-Alt is short for -AlternateBackgroundColor!)
+		$Table = AddWordTable -Hashtable $WordTable `
+			-Columns Update `
+			-Headers "Fully applied" `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitContent;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 1 "Updates"
+		<#
+		Line 2 "Fully applied`t: " "$($Updates[0].name_label) (version $($tmp.version))"
+		$cnt = -1
+		ForEach($tmp in $Updates)
+		{
+			$cnt++
+			If($cnt -gt 0)
+			{
+				Line 4 "  " "$($tmp.name_label) (version $($tmp.version))"
+			}
+		}
+		#>
+		Line 2 "Fully applied`t: " ""
+		ForEach ($tmp in $Updates)
+		{
+			Line 3 "" "$($tmp.name_label) (version $($tmp.version))"
+		}
+
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "Updates"
+		$rowdata = @()
+
+		ForEach ($tmp in $Updates)
+		{
+			$rowdata += @(, (
+					"$($tmp.name_label) (version $($tmp.version))", $htmlwhite))
+		}
+		
+		$columnHeaders = @(
+			'Fully applied', ($htmlsilver -bor $htmlbold))
+
+		$msg = ""
+		$columnWidths = @("150")
+		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+	}
+	
+}
+
+Function OutputPoolManagementInterfaces
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Management Interfaces"
+	#Sample code from the XenServer team
+	<#
+		this is what XenCenter does:
+		$servers = get-xenhost
+		
+		foreach ($server in $servers)   {
+			Write-host "DNS hostname:" $server.hostname
+			
+			$mPifs = $server.PIFs | get-xenPIF | where   {$_.management}
+
+			foreach ($pif in $mPifs)   {
+				If ($pif.IP)   {
+					Write-Host "Management interface on" $server.name_label ":" $pif.IP
+				}
+				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)   {
+					Write-Host "Management interface on" $server.name_label ":" "DHCP"
+				}
+				Else   {
+					Write-Host "Management interface on" $server.name_label ":" "Unknown"
+				}
+			} 
+		}
+	#>
+
+	<#ForEach ($Server in $Servers) 
+	{
+		Write-host "DNS hostname:" $Server.hostname
+		
+		$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object   {$_.management}
+
+		ForEach ($pif in $mPifs) 
+		{
+			If ($pif.IP) 
+			{
+				Write-Host "Management interface on" $server.name_label ":" $pif.IP
+			}
+			ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
+			{
+				Write-Host "Management interface on" $server.name_label ":" "DHCP"
+			}
+			Else 
+			{
+				Write-Host "Management interface on" $server.name_label ":" "Unknown"
+			}
+		} 
+	}#>
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "Management Interfaces"
+		$MITable = @()
+
+		ForEach ($Server in $Script:XSHosts)
+		{
+			$MITable += @{
+				Column1 = "DNS hostname on $($server.name_label):"
+				Column2 = $Server.hostname
+			}
+			
+			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object { $_.management }
+
+			ForEach ($pif in $mPifs)
+			{
+				If ($pif.IP)
+				{
+					$MITable += @{
+						Column1 = "Management interface on $($server.name_label):"
+						Column2 = "$($pif.IP)"
+					}
+				}
+				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)
+				{
+					$MITable += @{
+						Column1 = "Management interface on $($server.name_label):"
+						Column2 = "DHCP"
+					}
+				}
+				Else
+				{
+					$MITable += @{
+						Column1 = "Management interface on $($server.name_label):"
+						Column2 = "Unknown"
+					}
+				}
+			} 
+		}
+
+		If ($MITable.Count -gt 0)
+		{
+			$Table = AddWordTable -Hashtable $MITable `
+				-Columns Column1, Column2 `
+				-Headers "", "" `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 250;
+			$Table.Columns.Item(2).Width = 100;
+			
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+	}
+	If ($Text)
+	{
+		Line 2 "Management Interfaces"
+		Line 2 "=============================================================="
+		#		1234567890123456789012345678901234567890SS12345678901234567890
+		#		Management interface on 'XenServer1       255.255.255.255
+		ForEach ($Server in $Script:XSHosts)
+		{
+			Line 2 ( "{0,-40}    {1,-20}" -f "DNS hostname on $($server.name_label):", $Server.hostname)
+			
+			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object { $_.management }
+
+			ForEach ($pif in $mPifs)
+			{
+				If ($pif.IP)
+				{
+					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "$($pif.IP)")
+				}
+				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)
+				{
+					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "DHCP")
+				}
+				Else
+				{
+					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "Unknown")
+				}
+			} 
+		}
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "Management Interfaces"
+
+		$rowdata = @()
+
+		ForEach ($Server in $Script:XSHosts)
+		{
+			$rowdata += @(, (
+					"DNS hostname on $($server.name_label):", $htmlwhite,
+					$Server.hostname, $htmlwhite)
+			)
+			
+			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object { $_.management }
+
+			ForEach ($pif in $mPifs)
+			{
+				If ($pif.IP)
+				{
+					$rowdata += @(, (
+							"Management interface on $($server.name_label):", $htmlwhite,
+							"$($pif.IP)", $htmlwhite)
+					)
+				}
+				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)
+				{
+					$rowdata += @(, (
+							"Management interface on $($server.name_label):", $htmlwhite,
+							"DHCP", $htmlwhite)
+					)
+				}
+				Else
+				{
+					$rowdata += @(, (
+							"Management interface on $($server.name_label):", $htmlwhite,
+							"Unknown", $htmlwhite)
+					)
+				}
+			} 
+		}
+
+		$columnHeaders = @(
+			"", ($Script:htmlsb),
+			"", ($Script:htmlsb)
+		)
+
+		$msg = ""
+		$columnWidths = @("250", "100")
+		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolGeneral
+{
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool General"
+	[array]$xtags = @()
+	ForEach ($tag in $Script:XSPool.tags)
+	{
+		$xtags += $tag
+	}
+	If ($xtags.count -gt 0)
+	{
+		[array]$xtags = $xtags | Sort-Object
+	}
+	Else
+	{
+		[array]$xtags = @("<None>")
+	}
+	
+	If ([String]::IsNullOrEmpty($($Script:XSPool.Other_Config["folder"])))
+	{
+		$folderName = "None"
+	}
+	Else
+	{
+		$folderName = $Script:XSPool.Other_Config["folder"]
+	}
+
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "General"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $Script:XSPool.name_label; }
+		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
+		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", ") }
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 1 "General"
+		Line 2 "Name`t`t: " $Script:XSPool.name_label
+		Line 2 "Description`t`t: " $Script:XSPool.name_description
+		Line 2 "Folder`t`t`t: " $folderName
+		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
+		$xtags = $xtags.Trim("<", ">")
+		$folderName = $folderName.Trim("<", ">")
+		WriteHTMLLine 2 0 "General"
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
+		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
+		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $folderName, $htmlwhite))
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 
 		$msg = ""
 		$columnWidths = @("150", "250")
@@ -4490,6 +4877,7 @@ Function OutputPoolCustomFields
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields for Pool $PoolName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -4499,6 +4887,7 @@ Function OutputPoolCustomFields
 		If ($HTML)
 		{
 			WriteHTMLLine 0 1 "There are no Custom Fields for Pool $PoolName"
+			WriteHTMLLine 0 0 ""
 		}
 	}
 	Else
@@ -4718,54 +5107,55 @@ Function OutputPoolEmailOptions
 				}
 			}
 		}
-
-		If ($MSWord -or $PDF)
-		{
-			$Table = AddWordTable -Hashtable $ScriptInformation `
-				-Columns Data, Value `
-				-List `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
-
-			## IB - Set the header row format
-			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-
-			$Table.Columns.Item(1).Width = 150;
-			$Table.Columns.Item(2).Width = 250;
-
-			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-
-			FindWordDocumentEnd
-			$Table = $Null
-			WriteWordLine 0 0 ""
-		}
-		If ($Text)
-		{
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			$msg = ""
-			$columnWidths = @("150", "250")
-			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-			WriteHTMLLine 0 0 ""
-		}
 	}
 	Else
 	{
 		If ($MSWord -or $PDF)
 		{
-			WriteWordLine 0 0 "Send email alert notifications is disabled"
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Send email alert notifications"; Value = "Disabled"; }
 		}
 		If ($Text)
 		{
-			Line 2 "Send email alert notifications is disabled"
-			Line 0 ""
+			Line 2 "Send email alert notifications: " "Disabled"
 		}
 		If ($HTML)
 		{
-			WriteHTMLLine 0 0 "Send email alert notifications is disabled"
+			$rowdata = @()
+			$columnHeaders = @("Send email alert notifications", ($htmlsilver -bor $htmlbold), "Disabled", $htmlwhite)
 		}
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
 	}
 }
 
@@ -5039,43 +5429,54 @@ Function OutputPoolLivePatching
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Live Patching"
 
+	If ($Script:XSPool.live_patching_disabled)
+	{
+		$LivePatching = "Disabled"
+	}
+	Else
+	{
+		$LivePatching = "Enabled"
+	}
+
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 2 0 "Live Patching"
-		If ($Script:XSPool.live_patching_disabled)
-		{
-			WriteWordLine 0 0 "Live patching is Disabled"
-		}
-		Else
-		{
-			WriteWordLine 0 0 "Live patching is Enabled"
-		}
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Live patching"; Value = $LivePatching; }
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
 		WriteWordLine 0 0 ""
 	}
 	If ($Text)
 	{
 		Line 1 "Live Patching"
-		If ($Script:XSPool.live_patching_disabled)
-		{
-			Line 2 "Live patching is Disabled"
-		}
-		Else
-		{
-			Line 2 "Live patching is Enabled"
-		}
+		Line 2 "Live patching: " $LivePatching
 		Line 0 ""
 	}
 	If ($HTML)
 	{
 		WriteHTMLLine 2 0 "Live Patching"
-		If ($Script:XSPool.live_patching_disabled)
-		{
-			WriteHTMLLine 0 0 "Live patching is Disabled"
-		}
-		Else
-		{
-			WriteHTMLLine 0 0 "Live patching is Enabled"
-		}
+		$rowdata = @()
+		$columnHeaders = @("Live patching", ($htmlsilver -bor $htmlbold), $LivePatching, $htmlwhite)
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
 	}
 }
 
@@ -5083,43 +5484,54 @@ Function OutputPoolNetworkOptions
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Network Options"
 
+	If ($Script:XSPool.igmp_snooping_enabled)
+	{
+		$IGMPsnooping = "Enabled"
+	}
+	Else
+	{
+		$IGMPsnooping = "Disabled"
+	}
+
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 2 0 "Network Options"
-		If ($Script:XSPool.igmp_snooping_enabled)
-		{
-			WriteWordLine 0 0 "IGMP snooping is Enabled"
-		}
-		Else
-		{
-			WriteWordLine 0 0 "IGMP snooping is Disabled"
-		}
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "IGMP snooping"; Value = $IGMPsnooping; }
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
 		WriteWordLine 0 0 ""
 	}
 	If ($Text)
 	{
 		Line 1 "Network Options"
-		If ($Script:XSPool.igmp_snooping_enabled)
-		{
-			Line 2 "IGMP snooping is Enabled"
-		}
-		Else
-		{
-			Line 2 "IGMP snooping is Disabled"
-		}
+		Line 2 "IGMP snooping: " $IGMPsnooping
 		Line 0 ""
 	}
 	If ($HTML)
 	{
 		WriteHTMLLine 2 0 "Network Options"
-		If ($Script:XSPool.igmp_snooping_enabled)
-		{
-			WriteHTMLLine 0 0 "IGMP snooping is Enabled"
-		}
-		Else
-		{
-			WriteHTMLLine 0 0 "IGMP snooping is Disabled"
-		}
+		$rowdata = @()
+		$columnHeaders = @("IGMP snooping", ($htmlsilver -bor $htmlbold), $IGMPsnooping, $htmlwhite)
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
 	}
 }
 
@@ -5152,20 +5564,20 @@ Function OutputPoolClustering
 	{
 		If ($MSWord -or $PDF)
 		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
 			WriteWordLine 2 0 "Clustering"
-			WriteWordLine 0 0 "Clustering is Disabled"
-			WriteWordLine 0 0 ""
+			$ScriptInformation += @{ Data = "Clustering"; Value = "Disabled"; }
 		}
 		If ($Text)
 		{
 			Line 1 "Clustering"
-			Line 2 "Clustering is Disabled"
-			Line 0 ""
+			Line 2 "Clustering: " "Disabled"
 		}
 		If ($HTML)
 		{
+			$rowdata = @()
 			WriteHTMLLine 2 0 "Clustering"
-			WriteHTMLLine 0 0 "Clustering is Disabled"
+			$columnHeaders = @("Clustering", ($htmlsilver -bor $htmlbold), "Disabled", $htmlwhite)
 		}
 	}
 	Else
@@ -5185,31 +5597,12 @@ Function OutputPoolClustering
 			WriteWordLine 2 0 "Clustering"
 			$ScriptInformation += @{ Data = "Clustering"; Value = "Enabled"; }
 			$ScriptInformation += @{ Data = "Network"; Value = $ClusterNetwork; }
-
-			$Table = AddWordTable -Hashtable $ScriptInformation `
-				-Columns Data, Value `
-				-List `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
-
-			## IB - Set the header row format
-			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-
-			$Table.Columns.Item(1).Width = 150;
-			$Table.Columns.Item(2).Width = 300;
-
-			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-
-			FindWordDocumentEnd
-			$Table = $Null
-			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
 			Line 1 "Clustering"
 			Line 2 "Clustering: " "Enabled"
 			Line 2 "Network   : " $ClusterNetwork
-			Line 0 ""
 		}
 		If ($HTML)
 		{
@@ -5217,42 +5610,22 @@ Function OutputPoolClustering
 			WriteHTMLLine 2 0 "Clustering"
 			$columnHeaders = @("Clustering", ($htmlsilver -bor $htmlbold), "Enabled", $htmlwhite)
 			$rowdata += @(, ("Network", ($htmlsilver -bor $htmlbold), $ClusterNetwork, $htmlwhite))
-
-			$msg = ""
-			$columnWidths = @("150", "300")
-			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-			WriteHTMLLine 0 0 ""
 		}
 	}
-}
-
-Function OutputPoolUpdates
-{
-	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Updates"
-	$Updates = Get-XenPoolPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | Select-Object name_label, version | Sort-Object name_label
-
-	If ($MSWord -or $PDF)
+	
+	If($MSWord -or $PDF)
 	{
-		[System.Collections.Hashtable[]] $WordTable = @();
-		
-		WriteWordLine 2 0 "Updates" 
-		
-		ForEach ($tmp in $Updates)
-		{
-			$WordTableRowHash = @{ 
-				Update = "$($tmp.name_label) (version $($tmp.version))";
-			}
-			$WordTable += $WordTableRowHash;
-		}
-		## Add the table to the document, using the hashtable (-Alt is short for -AlternateBackgroundColor!)
-		$Table = AddWordTable -Hashtable $WordTable `
-			-Columns Update `
-			-Headers "Fully applied" `
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
 			-Format $wdTableGrid `
-			-AutoFit $wdAutoFitContent;
+			-AutoFit $wdAutoFitFixed;
 
 		## IB - Set the header row format
-		SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -5260,241 +5633,45 @@ Function OutputPoolUpdates
 		$Table = $Null
 		WriteWordLine 0 0 ""
 	}
-	If ($Text)
+	If($Text)
 	{
-		Line 1 "Updates"
-		<#
-		Line 2 "Fully applied`t: " "$($Updates[0].name_label) (version $($tmp.version))"
-		$cnt = -1
-		ForEach($tmp in $Updates)
-		{
-			$cnt++
-			If($cnt -gt 0)
-			{
-				Line 4 "  " "$($tmp.name_label) (version $($tmp.version))"
-			}
-		}
-		#>
-		Line 2 "Fully applied`t: " ""
-		ForEach ($tmp in $Updates)
-		{
-			Line 3 "" "$($tmp.name_label) (version $($tmp.version))"
-		}
-
 		Line 0 ""
 	}
-	If ($HTML)
+	If($HTML)
 	{
-		WriteHTMLLine 2 0 "Updates"
-		$rowdata = @()
-
-		ForEach ($tmp in $Updates)
-		{
-			$rowdata += @(, (
-					"$($tmp.name_label) (version $($tmp.version))", $htmlwhite))
-		}
-		
-		$columnHeaders = @(
-			'Fully applied', ($htmlsilver -bor $htmlbold))
-
 		$msg = ""
-		$columnWidths = @("150")
-		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-	}
-	
-}
-
-Function OutputPoolManagementInterfaces
-{
-	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Management Interfaces"
-	#Sample code from the XenServer team
-	<#
-		this is what XenCenter does:
-		$servers = get-xenhost
-		
-		foreach ($server in $servers)   {
-			Write-host "DNS hostname:" $server.hostname
-			
-			$mPifs = $server.PIFs | get-xenPIF | where   {$_.management}
-
-			foreach ($pif in $mPifs)   {
-				If ($pif.IP)   {
-					Write-Host "Management interface on" $server.name_label ":" $pif.IP
-				}
-				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)   {
-					Write-Host "Management interface on" $server.name_label ":" "DHCP"
-				}
-				Else   {
-					Write-Host "Management interface on" $server.name_label ":" "Unknown"
-				}
-			} 
-		}
-	#>
-
-	<#ForEach ($Server in $Servers) 
-	{
-		Write-host "DNS hostname:" $Server.hostname
-		
-		$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object   {$_.management}
-
-		ForEach ($pif in $mPifs) 
-		{
-			If ($pif.IP) 
-			{
-				Write-Host "Management interface on" $server.name_label ":" $pif.IP
-			}
-			ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP) 
-			{
-				Write-Host "Management interface on" $server.name_label ":" "DHCP"
-			}
-			Else 
-			{
-				Write-Host "Management interface on" $server.name_label ":" "Unknown"
-			}
-		} 
-	}#>
-
-	If ($MSWord -or $PDF)
-	{
-		WriteWordLine 2 0 "Management Interfaces"
-		$MITable = @()
-
-		ForEach ($Server in $Script:XSHosts)
-		{
-			$MITable += @{
-				Column1 = "DNS hostname on $($server.name_label):"
-				Column2 = $Server.hostname
-			}
-			
-			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object { $_.management }
-
-			ForEach ($pif in $mPifs)
-			{
-				If ($pif.IP)
-				{
-					$MITable += @{
-						Column1 = "Management interface on $($server.name_label):"
-						Column2 = "$($pif.IP)"
-					}
-				}
-				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)
-				{
-					$MITable += @{
-						Column1 = "Management interface on $($server.name_label):"
-						Column2 = "DHCP"
-					}
-				}
-				Else
-				{
-					$MITable += @{
-						Column1 = "Management interface on $($server.name_label):"
-						Column2 = "Unknown"
-					}
-				}
-			} 
-		}
-
-		If ($MITable.Count -gt 0)
-		{
-			$Table = AddWordTable -Hashtable $MITable `
-				-Columns Column1, Column2 `
-				-Headers "", "" `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
-
-			SetWordCellFormat -Collection $Table.Rows.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-
-			$Table.Columns.Item(1).Width = 250;
-			$Table.Columns.Item(2).Width = 100;
-			
-			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-
-			FindWordDocumentEnd
-			$Table = $Null
-			WriteWordLine 0 0 ""
-		}
-	}
-	If ($Text)
-	{
-		Line 2 "Management Interfaces"
-		Line 2 "=============================================================="
-		#		1234567890123456789012345678901234567890SS12345678901234567890
-		#		Management interface on 'XenServer1       255.255.255.255
-		ForEach ($Server in $Script:XSHosts)
-		{
-			Line 2 ( "{0,-40}    {1,-20}" -f "DNS hostname on $($server.name_label):", $Server.hostname)
-			
-			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object { $_.management }
-
-			ForEach ($pif in $mPifs)
-			{
-				If ($pif.IP)
-				{
-					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "$($pif.IP)")
-				}
-				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)
-				{
-					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "DHCP")
-				}
-				Else
-				{
-					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "Unknown")
-				}
-			} 
-		}
-		Line 0 ""
-	}
-	If ($HTML)
-	{
-		WriteHTMLLine 2 0 "Management Interfaces"
-
-		$rowdata = @()
-
-		ForEach ($Server in $Script:XSHosts)
-		{
-			$rowdata += @(, (
-					"DNS hostname on $($server.name_label):", $htmlwhite,
-					$Server.hostname, $htmlwhite)
-			)
-			
-			$mPifs = $Server.PIFs | Get-XenPIF -EA 0 | Where-Object { $_.management }
-
-			ForEach ($pif in $mPifs)
-			{
-				If ($pif.IP)
-				{
-					$rowdata += @(, (
-							"Management interface on $($server.name_label):", $htmlwhite,
-							"$($pif.IP)", $htmlwhite)
-					)
-				}
-				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)
-				{
-					$rowdata += @(, (
-							"Management interface on $($server.name_label):", $htmlwhite,
-							"DHCP", $htmlwhite)
-					)
-				}
-				Else
-				{
-					$rowdata += @(, (
-							"Management interface on $($server.name_label):", $htmlwhite,
-							"Unknown", $htmlwhite)
-					)
-				}
-			} 
-		}
-
-		$columnHeaders = @(
-			"", ($Script:htmlsb),
-			"", ($Script:htmlsb)
-		)
-
-		$msg = ""
-		$columnWidths = @("250", "100")
-		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
+}
+
+Function OutputPoolMemory
+{
+}
+
+Function OutputPoolStorage
+{
+}
+
+Function OutputPoolNetworking
+{
+}
+
+Function OutputPoolGPU
+{
+}
+
+Function OutputPoolHA
+{
+}
+
+Function OutputPoolWLB
+{
+}
+
+Function OutputPoolUsers
+{
 }
 #endregion
 

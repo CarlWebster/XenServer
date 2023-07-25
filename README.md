@@ -67,6 +67,10 @@ PARAMETERS
 
         If entered as an IP address, the script attempts o determine and use the actual
         pool or poolmaster name.
+	
+	ServerName should be the Pool Master. If you use a Slave host, the script attempts 
+	to determine the Pool Master and then makes a connection attempt to the Pool Master. 
+	If successful, the script continues. If not successful, the script ends.
 
         Required?                    true
         Position?                    named
@@ -470,7 +474,7 @@ OUTPUTS
 NOTES
 
         NAME: XS_Inventory.ps1
-        VERSION: 0.016
+        VERSION: 0.017
         AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
         LASTEDIT: July 25, 2023
 
