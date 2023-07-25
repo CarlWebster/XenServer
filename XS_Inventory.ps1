@@ -543,6 +543,14 @@ Param(
 #Created on June 27, 2023
 #
 #.015
+#	In Function OutputVMHomeServer, handle a VM whose power_state is not running (Webster)
+#		Add the message: VM's power state is $($vm.power_state). Unable to determine the running host.
+#	In Function OutputVMStorage, change the following: (Webster)
+#		$storages = $storages | Sort-Object -Property Position, Name to
+#		$storages = @($storages | Sort-Object -Property Position, Name)
+#		To prevent the error:
+#			The property 'Count' cannot be found on this object. Verify that the property exists.
+#			$storageCount = $storages.Count
 #
 #.014
 #   Modified the following Functions
@@ -8447,20 +8455,31 @@ Function OutputVMHomeServer
 		$HomeServerText = "Don't assign this VM a home server"
 		$HomeServer = ""
 		
-		#find host currently on
-		$HomeServerRef = $VM.resident_on.opaque_ref
-		
-		$results = Get-XenHost -Ref $HomeServerRef -EA 0
-		
-		If (!$?)
+		If($VM.power_state -ne "Running")
 		{
-			#unable to retrieve the running host
-			$HomeServer = "Unable to retrieve the running host"
+			$HomeServer = "VM's power state is $($vm.power_state). Unable to determine the running host."
 		}
 		Else
 		{
-			#we have the home server
-			$HomeServer = "Currently running on host $($results.name_label)"
+			#find host currently on
+			$HomeServerRef = $VM.resident_on.opaque_ref
+			
+			$results = Get-XenHost -Ref $HomeServerRef -EA 0
+			
+			If(!$?)
+			{
+				#unable to retrieve the running host
+				$HomeServer = "Unable to retrieve the running host"
+			}
+			ElseIf($Null -eq $results)
+			{
+				$HomeServer = "Unable to determine the running host"
+			}
+			Else
+			{
+				#we have the home server
+				$HomeServer = "Currently running on host $($results.name_label)"
+			}
 		}
 	}
 	Else
@@ -8469,7 +8488,7 @@ Function OutputVMHomeServer
 		
 		$results = Get-XenHost -Ref $HomeServerRef -EA 0
 		
-		If (!$?)
+		If(!$?)
 		{
 			#unable to retrieve the home server
 			$HomeServerText = "Unable to retrieve Home Server"
@@ -8808,7 +8827,7 @@ Function OutputVMStorage
 		@{Name = 'Active'; Expression = { $active } },
 		@{Name = 'DevicePath'; Expression = { $device } }
 	}
-	$storages = $storages | Sort-Object -Property Position, Name
+	$storages = @($storages | Sort-Object -Property Position, Name)
 	$storageCount = $storages.Count
 
 	If ($MSWord -or $PDF)
