@@ -428,9 +428,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.014
+	VERSION: 0.015
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 24, 2023
+	LASTEDIT: July 25, 2023
 #>
 
 #endregion
@@ -541,6 +541,8 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.015
 #
 #.014
 #   Modified the following Functions
@@ -718,9 +720,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.013'
+$script:MyVersion = '0.015'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/24/2023"
+$tmpdate = [datetime] "07/25/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
