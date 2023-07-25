@@ -38,6 +38,10 @@
 	
 	If entered as an IP address, the script attempts o determine and use the actual 
 	pool or poolmaster name.
+	
+	ServerName should be the Pool Master. If you use a Slave host, the script attempts 
+	to determine the Pool Master and then makes a connection attempt to the Pool Master. 
+	If successful, the script continues. If not successful, the script ends.
 .PARAMETER User
 	Username to use for the connection to the XenServer Pool.
 .PARAMETER HTML
@@ -428,7 +432,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.016
+	VERSION: 0.017
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
 	LASTEDIT: July 25, 2023
 #>
@@ -541,6 +545,9 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.017
+#	Update the help text for ServerName.
 #
 #.016
 #	Change the Disconnect message from "Disconnect from XenServer to
@@ -735,7 +742,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.015'
+$script:MyVersion = '0.017'
 $Script:ScriptName = "XS_Inventory.ps1"
 $tmpdate = [datetime] "07/25/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
