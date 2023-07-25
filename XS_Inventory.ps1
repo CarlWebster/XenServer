@@ -551,6 +551,8 @@ Param(
 #		To prevent the error:
 #			The property 'Count' cannot be found on this object. Verify that the property exists.
 #			$storageCount = $storages.Count
+#	In Function OutputVMStorage, change the following: (JohnB)
+#           Configured the priority value
 #
 #.014
 #   Modified the following Functions
@@ -8455,7 +8457,7 @@ Function OutputVMHomeServer
 		$HomeServerText = "Don't assign this VM a home server"
 		$HomeServer = ""
 		
-		If($VM.power_state -ne "Running")
+		If ($VM.power_state -ne "Running")
 		{
 			$HomeServer = "VM's power state is $($vm.power_state). Unable to determine the running host."
 		}
@@ -8466,12 +8468,12 @@ Function OutputVMHomeServer
 			
 			$results = Get-XenHost -Ref $HomeServerRef -EA 0
 			
-			If(!$?)
+			If (!$?)
 			{
 				#unable to retrieve the running host
 				$HomeServer = "Unable to retrieve the running host"
 			}
-			ElseIf($Null -eq $results)
+			ElseIf ($Null -eq $results)
 			{
 				$HomeServer = "Unable to determine the running host"
 			}
@@ -8488,7 +8490,7 @@ Function OutputVMHomeServer
 		
 		$results = Get-XenHost -Ref $HomeServerRef -EA 0
 		
-		If(!$?)
+		If (!$?)
 		{
 			#unable to retrieve the home server
 			$HomeServerText = "Unable to retrieve Home Server"
@@ -8798,22 +8800,37 @@ Function OutputVMStorage
 		{
 			$readonly = "Yes"
 		}
-		Else		{
+		Else
+		{
 			$readonly = "No"
 		}
 		If ($item.currently_attached -like $true)
 		{
 			$active = "Yes"
 		}
-		Else		{
+		Else
+		{
 			$active = "No"
 		}
 		If ([String]::IsNullOrEmpty($($item.device)))
 		{
 			$device = "<unknown>"
 		}
-		Else		{
+		Else
+		{
 			$device = '/dev/{0}' -f $item.device
+		}
+		If ([String]::IsNullOrEmpty($($item.qos_algorithm_params["class"]))) 
+		{
+			$priority = "0 (Lowest)"
+		}
+		ElseIf ($item.qos_algorithm_params["class"] -eq 7) 
+		{
+			$priority = "7 (Highest)"
+		}
+		Else 
+		{
+			$priority = "$($item.qos_algorithm_params["class"])"
 		}
 		$srText = '{0} on {1}' -f $sr.name_label, $VMHost
 		$storages += $item | Select-Object -Property `
@@ -8823,7 +8840,7 @@ Function OutputVMStorage
 		@{Name = 'SR'; Expression = { $srText } },
 		@{Name = 'Size'; Expression = { $(Convert-SizeToString -Size $vdi.virtual_size -Decimal 0) } },
 		@{Name = 'ReadOnly'; Expression = { $readonly } },
-		@{Name = 'Priority'; Expression = { "?" } },
+		@{Name = 'Priority'; Expression = { $priority } },
 		@{Name = 'Active'; Expression = { $active } },
 		@{Name = 'DevicePath'; Expression = { $device } }
 	}
