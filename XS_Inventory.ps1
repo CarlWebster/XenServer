@@ -428,7 +428,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.015
+	VERSION: 0.016
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
 	LASTEDIT: July 25, 2023
 #>
@@ -541,6 +541,11 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.016
+#	Change the Disconnect message from "Disconnect from XenServer to
+#		Disconnect from Pool Master $Script:ServerName (Webster)
+#	In Function ProcessScriptSetup, handle the scenario where a non-Pool Master is entered (Webster)
 #
 #.015
 #	In Function OutputVMHomeServer, handle a VM whose power_state is not running (Webster)
@@ -3905,16 +3910,69 @@ Function ProcessScriptSetup
 	$script:XSCredentials = Get-Credential -UserName $User -Message "Enter the XenServer login credentials" 
 	
 	#connect to XenServer host/pool
-	Write-Verbose "$(Get-Date -Format G): Connect to XenServer"
-	$Script:Session = Connect-XenServer -Server $Script:ServerName -Creds $XSCredentials -SetDefaultSession -NoWarnCertificates -PassThru 4>$Null
-	If ($? -and $Null -ne $Script:Session)
+	Write-Verbose "$(Get-Date -Format G): Attempt to connect to XenServer $Script:ServerName"
+	
+	try
 	{
+		$Script:Session = Connect-XenServer -Server $Script:ServerName -Creds $XSCredentials -SetDefaultSession -NoWarnCertificates -PassThru 4>$Null
+	}
+	
+	catch  [XenAPI.Failure] 
+	{
+		If($_.Exception.ErrorDescription[0] -eq "HOST_IS_SLAVE")
+		{
+			$tmp = $Script:ServerName
+
+			$Script:ServerName = $_.Exception.ErrorDescription[1]
+
+			$ip = $Script:ServerName -as [System.Net.IpAddress]
+
+			If($ip)
+			{
+				try
+				{ 
+					$Result = [System.Net.Dns]::gethostentry($ip) 
+				}
+				
+				catch
+				{
+					$Result = $null
+				}
+				
+				If($? -and $Null -ne $Result)
+				{
+					$Script:ServerName = $Result.HostName
+					Write-Verbose "$(Get-Date -Format G): Server name has been changed from $ip to $Script:ServerName"
+				}
+				Else
+				{
+					Write-Warning "Unable to resolve $Script:ServerName to a hostname"
+				}
+			}
+			Else
+			{
+				#server is online but for some reason $Script:ServerName cannot be converted to a System.Net.IpAddress
+			}
+			Write-Host "
+		$tmp is a Slave. 
+		Attempt to connect to the Pool Master $Script:ServerName
+			" -ForegroundColor White
+		}
+	}
+
+	$Script:Session = Connect-XenServer -Server $Script:ServerName -Creds $XSCredentials -SetDefaultSession -NoWarnCertificates -PassThru 4>$Null
+	
+	If($? -and $Null -ne $Script:Session)
+	{
+		Write-Host "
+		Successfully connected to the Pool Master $Script:ServerName
+		" -ForegroundColor White
 		#success
 	}
 	Else
 	{
 		#error
-		Write-Error "Unable to connect to XenServer host/pool $($Server).  Script cannot continue."
+		Write-Error "Unable to connect to XenServer Pool Master $($Script:Server). Script cannot continue."
 		Return $False
 	}
 
@@ -9441,9 +9499,12 @@ If ($ReportFooter)
 
 ProcessDocumentOutput "Regular"
 
-#disconnect from XenServer
-Write-Verbose "$(Get-Date -Format G): Disconnect from XenServer"
-Disconnect-XenServer -Session $Script:Session
+#disconnect from Pool Master
+Write-Host "
+	Disconnect from Pool Master $Script:ServerName
+	" -ForegroundColor White
+
+Disconnect-XenServer -Session $Script:Session 4>$Null
 
 ProcessScriptEnd
 
