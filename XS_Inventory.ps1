@@ -432,9 +432,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.017
+	VERSION: 0.018
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-	LASTEDIT: July 25, 2023
+	LASTEDIT: July 26, 2023
 #>
 
 #endregion
@@ -545,6 +545,11 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.018
+#	Started updating Function OutputPoolUsers with data (Webster)
+#	Started working on Function OutputPoolHA (Webster)
+#	Updated Function OutputPoolWLB with data I hope is correct since I don't have a WLB appliance (Webster)
 #
 #.017
 #	Add Function OutputPoolGeneralOverview
@@ -769,9 +774,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.017'
+$script:MyVersion = '0.018'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/25/2023"
+$tmpdate = [datetime] "07/26/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4379,6 +4384,13 @@ Function ProcessPool
 		OutputPoolLivePatching
 		OutputPoolNetworkOptions
 		OutputPoolClustering
+		OutputPoolMemory
+		OutputPoolStorage
+		OutputPoolNetworking
+		OutputPoolGPU
+		OutputPoolHA
+		OutputPoolWLB
+		OutputPoolUsers
 	}
 }
 
@@ -5648,30 +5660,373 @@ Function OutputPoolClustering
 
 Function OutputPoolMemory
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Memory"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 2 0 "Memory"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 1 "Memory"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "Memory"
+	}
+	
 }
 
 Function OutputPoolStorage
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Storage"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 2 0 "Storage"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 1 "Storage"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "Storage"
+	}
+	
 }
 
 Function OutputPoolNetworking
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Networking"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 2 0 "Networking"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 1 "Networking"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "Networking"
+	}
+	
 }
 
 Function OutputPoolGPU
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool GPU"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 2 0 "GPU"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 1 "GPU"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "GPU"
+	}
+	
 }
 
 Function OutputPoolHA
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool HA"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 2 0 "HA"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 1 "HA"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "HA"
+	}
+	
+	If ($Script:XSPool.ha_enabled)
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = ""; Value = ""; }
+
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 2 ""
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+			$columnHeaders = @("", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+
+			$msg = ""
+			$columnWidths = @("150", "250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+	Else
+	{
+		$HAPool = "`'$($Script:XSPool.name_label)`'"
+		$HATxt = "HA is not currently enabled for pool"
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = $HATxt; Value = $HAPool; }
+
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(2).Width = 200;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 2 "$($HATxt): " $HAPool
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+			$columnHeaders = @($HATxt, ($htmlsilver -bor $htmlbold), $HAPool, $htmlwhite)
+
+			$msg = ""
+			$columnWidths = @("200", "200")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
 }
 
 Function OutputPoolWLB
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool WLB"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 2 0 "WLB"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 1 "WLB"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "WLB"
+	}
+	
+	If ($Script:XSPool.wlb_enabled)
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Server Address"; Value = ""; }
+			$ScriptInformation += @{ Data = "     Address"; Value = "$($Script:XSPool.wlb_url)"; }
+			$ScriptInformation += @{ Data = "WLB Server Credentials"; Value = ""; }
+			$ScriptInformation += @{ Data = "     Username"; Value = "$($Script:XSPool.wlb_username)"; }
+
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 2 "Server Address"
+			Line 3 "Address : " "$($Script:XSPool.wlb_url)"
+			Line 2 "WLB Server Credentials"
+			Line 3 "Username: " "$($Script:XSPool.wlb_username)"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+			$columnHeaders = @("Server Address", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+			$rowdata += @(, ("     Address", ($htmlsilver -bor $htmlbold), "$($Script:XSPool.wlb_url)", $htmlwhite))
+			$rowdata += @(, ("WLB Server Credentials", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+			$rowdata += @(, ("     Username", ($htmlsilver -bor $htmlbold), "$($Script:XSPool.wlb_username)", $htmlwhite))
+
+			$msg = ""
+			$columnWidths = @("150", "250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+	Else
+	{
+		$WLBTxt = "Pool `($($Script:XSPool.name_label)`) is not currently connected to a Workload Balancing (WLB) server"
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = $WLBTxt; Value = ""; }
+
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 400;
+			$Table.Columns.Item(2).Width = 20;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 2 $WLBTxt
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+			$columnHeaders = @($WLBTxt, ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+
+			$msg = ""
+			$columnWidths = @("450", "10")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
 }
 
 Function OutputPoolUsers
 {
+	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Users"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 2 0 "Users"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 1 "Users"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "Users"
+	}
+
+	#domain info
+	If($Script:PoolMasterInfo.external_auth_type -eq "AD")
+	{
+		$DomainTxt = "Pool `'$($Script:XSPool.name_label)`' belongs to the domain"
+		$DomainName = "`'$($Script:PoolMasterInfo.external_auth_service_name)`'"
+	}
+	Else
+	{
+		$DomainTxt = "AD is not currently configured for pool"
+		$DomainName = "`'$($Script:XSPool.name_label)`'"
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Active Directory Users"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = $DomainTxt; Value = $DomainName; }
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 200;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 2 "Active Directory Users"
+		Line 3 "$($DomainTxt): " $DomainName
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "Active Directory Users"
+		$rowdata = @()
+		$columnHeaders = @($DomainTxt, ($htmlsilver -bor $htmlbold), $DomainName, $htmlwhite)
+
+		$msg = ""
+		$columnWidths = @("225", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+	
+	#user info
 }
 #endregion
 
