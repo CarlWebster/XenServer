@@ -140,12 +140,12 @@ PARAMETERS
         Accept wildcard characters? false
 
     -NoPoolMemory [<SwitchParameter>]
-	Excludes Pool Memory information from the output document.
+        Excludes Pool Memory information from the output document.
 	
-	This Switch is useful in large XenServer pools, where there may be many hosts.
+        This Switch is useful in large XenServer pools, where there may be many hosts.
 	
-	This parameter is disabled by default.
-	This parameter has an alias of NPM.
+        This parameter is disabled by default.
+        This parameter has an alias of NPM.
 
         Required?                    false
         Position?                    named
@@ -154,12 +154,12 @@ PARAMETERS
         Accept wildcard characters? false
 
     -NoPoolStorage [<SwitchParameter>]
-	Excludes Pool Storage information from the output document.
+        Excludes Pool Storage information from the output document.
 	
-	This Switch is useful in large XenServer pools, where there may be many storage repositories and hosts.
+        This Switch is useful in large XenServer pools, where there may be many storage repositories and hosts.
 	
-	This parameter is disabled by default.
-	This parameter has an alias of NPS.
+        This parameter is disabled by default.
+        This parameter has an alias of NPS.
 
         Required?                    false
         Position?                    named
@@ -170,10 +170,10 @@ PARAMETERS
     -NoPoolNetworking [<SwitchParameter>]
         Excludes Pool Networking information from the output document.
 	
-	This Switch is useful in large XenServer pools, where there may be many hosts.
+        This Switch is useful in large XenServer pools, where there may be many hosts.
 	
-	This parameter is disabled by default.
-	This parameter has an alias of NPN.
+        This parameter is disabled by default.
+        This parameter has an alias of NPN.
 
         Required?                    false
         Position?                    named
