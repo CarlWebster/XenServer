@@ -13,21 +13,21 @@ If you still use or want to test this script, have at it. I am busy with work an
 If you want to test it, you must do whatever you do on GitHub to receive notifications when I do updates. I started the initial version at .001, as I think it will take a few updates with my schedule to make significant progress.
 
 NAME
-   C:\PSScripts\XS_Inventory.ps1
+    C:\PSScripts\XS_Inventory.ps1
 
 SYNOPSIS
-    Creates an inventory of a XenServer 8.2 Pool.
+    Creates an inventory of a XenServer 8.2 CU1 Pool.
 
 
 SYNTAX
-   C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] [-Folder <String>] [-Section <String[]>] [-NoPoolMemory] [-NoPoolStorage] [-NoPoolNetworking] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] [-ReportFooter] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From <String>] [-To <String>] [-UseSSL] [<CommonParameters>]
+    C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] [-Folder <String>] [-Section <String[]>] [-NoPoolMemory] [-NoPoolStorage] [-NoPoolNetworking] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] [-ReportFooter] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From <String>] [-To <String>] [-UseSSL] [<CommonParameters>]
 
-   C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] [-Folder <String>] [-Section <String[]>] [-NoPoolMemory] [-NoPoolStorage] [-NoPoolNetworking] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] [-ReportFooter] [-MSWord] [-PDF] [-CompanyAddress <String>] [-CompanyEmail <String>] [-CompanyFax <String>] [-CompanyName <String>]
+    C:PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] [-Folder <String>] [-Section <String[]>] [-NoPoolMemory] [-NoPoolStorage] [-NoPoolNetworking] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] [-ReportFooter] [-MSWord] [-PDF] [-CompanyAddress <String>] [-CompanyEmail <String>] [-CompanyFax <String>] [-CompanyName <String>]
     [-CompanyPhone <String>] [-CoverPage <String>] [-UserName <String>] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From <String>] [-To <String>] [-UseSSL] [<CommonParameters>]
 
 
 DESCRIPTION
-    Creates a complete inventory of a XenServer 8.2 Pool using Microsoft Word, PDF, formatted
+    Creates a complete inventory of a XenServer 8.2 CU1 Pool using Microsoft Word, PDF, formatted
     text, HTML, and PowerShell.
 
     The script requires at least PowerShell version 4 but runs best in version 5.
@@ -136,7 +136,7 @@ PARAMETERS
     -NoPoolMemory [<SwitchParameter>]
         Excludes Pool Memory information from the output document.
 
-        This Switch is useful in large XenServer pools, where there may be many hosts.
+        This Switch is helpful in large XenServer pools, where there may be many hosts.
 
         This parameter is disabled by default.
         This parameter has an alias of NPM.
@@ -150,7 +150,8 @@ PARAMETERS
     -NoPoolStorage [<SwitchParameter>]
         Excludes Pool Storage information from the output document.
 
-        This Switch is useful in large XenServer pools, where there may be many storage repositories and hosts.
+        This Switch is helpful in large XenServer pools, where there may be many storage
+        repositories and hosts.
 
         This parameter is disabled by default.
         This parameter has an alias of NPS.
@@ -164,7 +165,7 @@ PARAMETERS
     -NoPoolNetworking [<SwitchParameter>]
         Excludes Pool Networking information from the output document.
 
-        This Switch is useful in large XenServer pools, where there may be many hosts.
+        This Switch is helpful in large XenServer pools, where there may be many hosts.
 
         This parameter is disabled by default.
         This parameter has an alias of NPN.
@@ -179,9 +180,9 @@ PARAMETERS
         Adds a date timestamp to the end of the file name.
 
         The timestamp is in the format of yyyy-MM-dd_HHmm.
-        June 1, 2024 at 6PM is 2024-06-01_1800.
+        June 1, 2024, at 6 PM is 2024-06-01_1800.
 
-        THe output filename will be ReportName_2024-06-01_1800.<ext>.
+        The output filename will be ReportName_2024-06-01_1800.<ext>.
 
         This parameter is disabled by default.
         This parameter has an alias of ADT.
@@ -355,7 +356,7 @@ PARAMETERS
         Accept wildcard characters?  false
 
     -CompanyPhone <String>
-        Company Phone to use for the Cover Page   If the Cover Page has the Phone field.
+        Company Phone to use for the Cover Page if the Cover Page has the Phone field.
 
         The following Cover Pages have a Phone field:
                 Contrast (Word 2010)
@@ -510,7 +511,7 @@ NOTES
 
         NAME: XS_Inventory.ps1
         VERSION: 0.019
-        AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
+        AUTHOR: Carl Webster and John Billekens, along with help from Michael B. Smith, Guy Leech, and the XenServer team
         LASTEDIT: July 26, 2023
 
     -------------------------- EXAMPLE 1 --------------------------
@@ -567,7 +568,7 @@ NOTES
         Sherlock Holmes Consulting for the Company Name.
         Exposure for the Cover Page format.
         Dr. Watson for the User Name.
-        221B Baker Street, London, England for the Company Address.
+        221B Baker Street, London, England, for the Company Address.
         +44 1753 276600 for the Company Fax.
         +44 1753 276200 for the Company Phone.
 
@@ -581,8 +582,7 @@ NOTES
 
     PS C:\>PS C:\PSScript .\XS_Inventory.ps1 -CompanyName "Sherlock Holmes
     Consulting" -CoverPage Facet -UserName "Dr. Watson" -CompanyEmail
-    SuperSleuth@SherlockHolmes.com
-    -PDF
+    SuperSleuth@SherlockHolmes.com -PDF
 
     Uses:
         Sherlock Holmes Consulting for the Company Name.
@@ -631,7 +631,9 @@ NOTES
     PS C:\PSScript >.\XS_Inventory.ps1 -ServerName PoolMaster.domain.com -Section Pool
     -NoPoolMemory -NoPoolStorage -NoPoolNetworking
 
-    Creates an HTML report that contains only Pool information, but with no Memory, Storage, or Networking data.
+    Creates an HTML report that contains only Pool information but with no Memory, Storage,
+    or Networking data.
+
     Processes only the Pool section of the report.
     Prompts for the XenServer Pool and login credentials.
 
@@ -651,8 +653,8 @@ NOTES
 
 
     -------------------------- EXAMPLE 10 --------------------------
-    PS C:\PSScript >.\XS_Inventory.ps1 -SmtpServer mail.domain.tld -From
 
+    PS C:\PSScript >.\XS_Inventory.ps1 -SmtpServer mail.domain.tld -From
     XSAdmin@domain.tld -To ITGroup@domain.tld -Text
 
     The script uses the email server mail.domain.tld, sending from XSAdmin@domain.tld
@@ -688,7 +690,7 @@ NOTES
     https://support.google.com/a/answer/2956491?hl=en
     https://support.google.com/a/answer/176600?hl=en
 
-    To send an email using a Gmail or g-suite account, you may have to turn ON the "Less
+    To send an email using a Gmail or G-suite account, you may have to turn ON the "Less
     secure app access" option on your account.
     ***GMAIL/G SUITE SMTP RELAY***
 
@@ -761,9 +763,5 @@ NOTES
 
     Outputs, by default, to HTML.
     Prompts for the XenServer Pool and login credentials.
-
-
-
-
 
 RELATED LINKS
