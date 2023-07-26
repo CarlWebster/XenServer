@@ -33,7 +33,7 @@ SYNTAX
 
 DESCRIPTION
 
-    Creates a complete inventory of a XenServer 8.2 Pool using Microsoft Word, PDF, formatted 
+    Creates a complete inventory of a XenServer 8.2 CU1 Pool using Microsoft Word, PDF, formatted 
     text, HTML, and PowerShell.
 
     The script requires at least PowerShell version 4 but runs best in version 5.
