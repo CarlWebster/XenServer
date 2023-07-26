@@ -5,9 +5,9 @@
 
 <#
 .SYNOPSIS
-	Creates an inventory of a XenServer 8.2 Pool.
+	Creates an inventory of a XenServer 8.2 CU1 Pool.
 .DESCRIPTION
-	Creates a complete inventory of a XenServer 8.2 Pool using Microsoft Word, PDF, formatted 
+	Creates a complete inventory of a XenServer 8.2 CU1 Pool using Microsoft Word, PDF, formatted 
 	text, HTML, and PowerShell.
 	
 	The script requires at least PowerShell version 4 but runs best in version 5.
@@ -37,7 +37,7 @@
 	You can enter the ServerName as the NetBIOS name, FQDN, or IP Address.
 	
 	If entered as an IP address, the script attempts o determine and use the actual 
-	pool or poolmaster name.
+	pool or Pool Master name.
 	
 	ServerName should be the Pool Master. If you use a Slave host, the script attempts 
 	to determine the Pool Master and then makes a connection attempt to the Pool Master. 
@@ -71,21 +71,22 @@
 .PARAMETER NoPoolMemory
 	Excludes Pool Memory information from the output document.
 	
-	This Switch is useful in large XenServer pools, where there may be many hosts.
+	This Switch is helpful in large XenServer pools, where there may be many hosts.
 	
 	This parameter is disabled by default.
 	This parameter has an alias of NPM.
 .PARAMETER NoPoolStorage
 	Excludes Pool Storage information from the output document.
 	
-	This Switch is useful in large XenServer pools, where there may be many storage repositories and hosts.
+	This Switch is helpful in large XenServer pools, where there may be many storage 
+	repositories and hosts.
 	
 	This parameter is disabled by default.
 	This parameter has an alias of NPS.
 .PARAMETER NoPoolNetworking
 	Excludes Pool Networking information from the output document.
 	
-	This Switch is useful in large XenServer pools, where there may be many hosts.
+	This Switch is helpful in large XenServer pools, where there may be many hosts.
 	
 	This parameter is disabled by default.
 	This parameter has an alias of NPN.
@@ -93,9 +94,9 @@
 	Adds a date timestamp to the end of the file name.
 	
 	The timestamp is in the format of yyyy-MM-dd_HHmm.
-	June 1, 2024 at 6PM is 2024-06-01_1800.
+	June 1, 2024, at 6 PM is 2024-06-01_1800.
 	
-	THe output filename will be ReportName_2024-06-01_1800.<ext>.
+	The output filename will be ReportName_2024-06-01_1800.<ext>.
 	
 	This parameter is disabled by default.
 	This parameter has an alias of ADT.
@@ -192,7 +193,7 @@
 	This parameter is only valid with the MSWORD and PDF output parameters.
 	This parameter has an alias of CN.
 .PARAMETER CompanyPhone
-	Company Phone to use for the Cover Page   If the Cover Page has the Phone field. 
+	Company Phone to use for the Cover Page if the Cover Page has the Phone field. 
 	
 	The following Cover Pages have a Phone field:
 		Contrast (Word 2010)
@@ -226,8 +227,8 @@
 		Ion (Light) (Word 2013/2016. Top date doesn't fit; box needs to be 
 		manually resized or font changed to 8 point)
 		Mod (Word 2010. Works)
-		Motion (Word 2010/2013/2016. Works   If the top date is manually changed to 
-		36 point)
+		Motion (Word 2010/2013/2016. Works   If the top date is manually changed 
+		to 36 point)
 		Newsprint (Word 2010. Works but the date is not populated)
 		Perspective (Word 2010. Works)
 		Pinstripes (Word 2010. Works)
@@ -275,7 +276,7 @@
 	PS C:\PSScript > .\XS_Inventory.ps1
 	
 	Outputs, by default, to HTML.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript .\XS_Inventory.ps1 -MSWord -CompanyName "Carl Webster 
 	Consulting" -CoverPage "Mod" -UserName "Carl Webster" -ServerName XS01
@@ -287,7 +288,7 @@
 		XenServer host named XS01 for the ServerName.
 
 	Outputs to Microsoft Word.
-	Prompts for the XenServer Host login credentials.
+	Prompts for the XenServer Pool login credentials.
 .EXAMPLE
 	PS C:\PSScript .\XS_Inventory.ps1 -PDF -CN "Carl Webster Consulting" -CP 
 	"Mod" -UN "Carl Webster"
@@ -298,7 +299,7 @@
 		Carl Webster for the User Name (alias UN).
 
 	Outputs to PDF.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript .\XS_Inventory.ps1 -CompanyName "Sherlock Holmes 
 	Consulting" -CoverPage Exposure -UserName "Dr. Watson" -CompanyAddress "221B Baker 
@@ -309,12 +310,12 @@
 		Sherlock Holmes Consulting for the Company Name.
 		Exposure for the Cover Page format.
 		Dr. Watson for the User Name.
-		221B Baker Street, London, England for the Company Address.
+		221B Baker Street, London, England, for the Company Address.
 		+44 1753 276600 for the Company Fax.
 		+44 1753 276200 for the Company Phone.
 
 	Outputs to Microsoft Word.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript .\XS_Inventory.ps1 -CompanyName "Sherlock Holmes 
 	Consulting" -CoverPage Facet -UserName "Dr. Watson" -CompanyEmail 
@@ -328,7 +329,7 @@
 		SuperSleuth@SherlockHolmes.com for the Company Email.
 
 	Outputs to PDF.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript >.\XS_Inventory.ps1 -Dev -ScriptInfo -Log
 	
@@ -342,20 +343,29 @@
 	
 	Creates a text file for transcript logging named 
 	XSDocScriptTranscript_yyyyMMddTHHmmssffff.txt.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript >.\XS_Inventory.ps1 -Section Pool
 	
 	Creates an HTML report that contains only Pool information.
 	Processes only the Pool section of the report.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
+.EXAMPLE
+	PS C:\PSScript >.\XS_Inventory.ps1 -ServerName PoolMaster.domain.com -Section Pool 
+	-NoPoolMemory -NoPoolStorage -NoPoolNetworking
+	
+	Creates an HTML report that contains only Pool information but with no Memory, Storage, 
+	or Networking data.
+	
+	Processes only the Pool section of the report.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript > .\XS_Inventory.ps1 -Section Pool, Host
 
 	Creates an HTML report.
 
 	The report includes only the Pool and Host sections.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript > .\XS_Inventory.ps1 -SmtpServer mail.domain.tld -From 
 	XSAdmin@domain.tld -To ITGroup@domain.tld -Text
@@ -369,7 +379,7 @@
 	the user to enter valid credentials.
 
 	Outputs to a text file.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript > .\XS_Inventory.ps1 -SmtpServer mailrelay.domain.tld -From 
 	Anonymous@domain.tld -To ITGroup@domain.tld	
@@ -388,7 +398,7 @@
 	https://support.google.com/a/answer/2956491?hl=en
 	https://support.google.com/a/answer/176600?hl=en
 
-	To send an email using a Gmail or g-suite account, you may have to turn ON the "Less 
+	To send an email using a Gmail or G-suite account, you may have to turn ON the "Less 
 	secure app access" option on your account.
 	***GMAIL/G SUITE SMTP RELAY***
 
@@ -396,7 +406,7 @@
 	account.
 
 	Outputs, by default, to HTML.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript > .\XS_Inventory.ps1 -SmtpServer 
 	labaddomain-com.mail.protection.outlook.com -UseSSL -From 
@@ -416,7 +426,7 @@
 	The script uses the default SMTP port 25 and SSL.
 
 	Outputs, by default, to HTML.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript > .\XS_Inventory.ps1 -SmtpServer smtp.office365.com -SmtpPort 587
 	-UseSSL -From Webster@CarlWebster.com -To ITGroup@CarlWebster.com	
@@ -428,13 +438,13 @@
 	the user to enter valid credentials.
 
 	Outputs, by default, to HTML.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .EXAMPLE
 	PS C:\PSScript > .\XS_Inventory.ps1 -SmtpServer smtp.gmail.com -SmtpPort 587
 	-UseSSL -From Webster@CarlWebster.com -To ITGroup@CarlWebster.com	
 
 	*** NOTE ***
-	To send an email using a Gmail or g-suite account, you may have to turn ON the "Less 
+	To send an email using a Gmail or G-suite account, you may have to turn ON the "Less 
 	secure app access" option on your account.
 	*** NOTE ***
 	
@@ -445,7 +455,7 @@
 	the user to enter valid credentials.
 
 	Outputs, by default, to HTML.
-	Prompts for the XenServer Host or Pool and login credentials.
+	Prompts for the XenServer Pool and login credentials.
 .INPUTS
 	None.  You cannot pipe objects to this script.
 .OUTPUTS
@@ -453,8 +463,8 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.018
-	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
+	VERSION: 0.019
+	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
 	LASTEDIT: July 26, 2023
 #>
 
@@ -578,6 +588,10 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.019
+#	Updated the help text by fixing grammar and spelling issues and adding a new example (Webster)
+#	Updated the ReadMe file by adding a "What the script documents" section (Webster)
 #
 #.018
 #	Added Switch Parameters NoPoolMemory, NoPoolStorage, and NoPoolNetworking (Webster)
@@ -814,7 +828,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.018'
+$script:MyVersion = '0.019'
 $Script:ScriptName = "XS_Inventory.ps1"
 $tmpdate = [datetime] "07/26/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
@@ -5991,7 +6005,7 @@ Function OutputPoolNetworking
 	}
 	$XSNetworks = @($XSNetworks | Sort-Object -Property XSHostname, Name)
 	$Script:XSPoolNetworks = $XSNetworks
-	#Choose to use poolmaster data as original XenCenter pool data is more or less "random"
+	#Choose to use Pool Master data as original XenCenter pool data is more or less "random"
 	$XSNetworks = $XSNetworks | Where-Object { $_.XSHostPoolMaster -eq $true}
 	$nrNetworking = $XSNetworks.Count
 	If ($MSWord -or $PDF)
