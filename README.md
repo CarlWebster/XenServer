@@ -14,7 +14,7 @@ If you want to test it, you must do whatever you do on GitHub to receive notific
 
 SYNOPSIS
 
-    Creates an inventory of a XenServer 8.2 Pool.
+    Creates an inventory of a XenServer 8.2 CU1 Pool.
     
 SYNTAX
 
