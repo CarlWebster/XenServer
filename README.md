@@ -12,28 +12,22 @@ If you still use or want to test this script, have at it. I am busy with work an
 
 If you want to test it, you must do whatever you do on GitHub to receive notifications when I do updates. I started the initial version at .001, as I think it will take a few updates with my schedule to make significant progress.
 
+NAME
+   C:\PSScripts\XS_Inventory.ps1
+
 SYNOPSIS
+    Creates an inventory of a XenServer 8.2 Pool.
 
-    Creates an inventory of a XenServer 8.2 CU1 Pool.
-    
+
 SYNTAX
+   C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] [-Folder <String>] [-Section <String[]>] [-NoPoolMemory] [-NoPoolStorage] [-NoPoolNetworking] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] [-ReportFooter] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From <String>] [-To <String>] [-UseSSL] [<CommonParameters>]
 
-    C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] 
-    [-Folder <String>] [-Section <String[]>] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] 
-    [-ReportFooter] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From <String>] [-To 
-    <String>] [-UseSSL] [<CommonParameters>]
-
-    C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] 
-    [-Folder <String>] [-Section <String[]>] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] 
-    [-ReportFooter] [-MSWord] [-PDF] [-CompanyAddress <String>] [-CompanyEmail <String>] 
-    [-CompanyFax <String>] [-CompanyName <String>] [-CompanyPhone <String>] [-CoverPage 
-    <String>] [-UserName <String>] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From 
-    <String>] [-To <String>] [-UseSSL] [<CommonParameters>]
+   C:\PSScripts\XS_Inventory.ps1 -ServerName <String> [-User <String>] [-HTML] [-Text] [-Folder <String>] [-Section <String[]>] [-NoPoolMemory] [-NoPoolStorage] [-NoPoolNetworking] [-AddDateTime] [-Dev] [-Log] [-ScriptInfo] [-ReportFooter] [-MSWord] [-PDF] [-CompanyAddress <String>] [-CompanyEmail <String>] [-CompanyFax <String>] [-CompanyName <String>]
+    [-CompanyPhone <String>] [-CoverPage <String>] [-UserName <String>] [-SmtpPort <Int32>] [-SmtpServer <String>] [-From <String>] [-To <String>] [-UseSSL] [<CommonParameters>]
 
 
 DESCRIPTION
-
-    Creates a complete inventory of a XenServer 8.2 CU1 Pool using Microsoft Word, PDF, formatted 
+    Creates a complete inventory of a XenServer 8.2 Pool using Microsoft Word, PDF, formatted
     text, HTML, and PowerShell.
 
     The script requires at least PowerShell version 4 but runs best in version 5.
@@ -59,58 +53,57 @@ DESCRIPTION
 
 
 PARAMETERS
-
     -ServerName <String>
         Specifies which XenServer Pool to use to run the script against.
 
         You can enter the ServerName as the NetBIOS name, FQDN, or IP Address.
 
         If entered as an IP address, the script attempts o determine and use the actual
-        pool or poolmaster name.
-	
-        ServerName should be the Pool Master. If you use a Slave host, the script attempts 
-        to determine the Pool Master and then makes a connection attempt to the Pool Master. 
+        pool or Pool Master name.
+
+        ServerName should be the Pool Master. If you use a Slave host, the script attempts
+        to determine the Pool Master and then makes a connection attempt to the Pool Master.
         If successful, the script continues. If not successful, the script ends.
 
         Required?                    true
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -User <String>
-        Username to use for the connection to the XenServer Host or Pool.
+        Username to use for the connection to the XenServer Pool.
 
         Required?                    false
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -HTML [<SwitchParameter>]
         Creates an HTML file with an .html extension.
 
         HTML is the default report format.
 
-        This parameter is set to True if no other output format is selected.
+        This parameter is set to True   If no other output format is selected.
 
         Required?                    false
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -Text [<SwitchParameter>]
         Creates a formatted text file with a .txt extension.
         Text formatting is based on the default tab spacing of 8 by Microsoft Notepad.
-        
+
         This parameter is disabled by default.
 
         Required?                    false
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -Folder <String>
         Specifies the optional output folder to save the output report.
@@ -119,7 +112,7 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -Section <String[]>
         Processes one or more sections of the report.
@@ -137,13 +130,13 @@ PARAMETERS
         Position?                    named
         Default value                All
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -NoPoolMemory [<SwitchParameter>]
         Excludes Pool Memory information from the output document.
-	
+
         This Switch is useful in large XenServer pools, where there may be many hosts.
-	
+
         This parameter is disabled by default.
         This parameter has an alias of NPM.
 
@@ -151,13 +144,13 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -NoPoolStorage [<SwitchParameter>]
         Excludes Pool Storage information from the output document.
-	
+
         This Switch is useful in large XenServer pools, where there may be many storage repositories and hosts.
-	
+
         This parameter is disabled by default.
         This parameter has an alias of NPS.
 
@@ -165,13 +158,13 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -NoPoolNetworking [<SwitchParameter>]
         Excludes Pool Networking information from the output document.
-	
+
         This Switch is useful in large XenServer pools, where there may be many hosts.
-	
+
         This parameter is disabled by default.
         This parameter has an alias of NPN.
 
@@ -179,7 +172,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -AddDateTime [<SwitchParameter>]
         Adds a date timestamp to the end of the file name.
@@ -187,7 +180,7 @@ PARAMETERS
         The timestamp is in the format of yyyy-MM-dd_HHmm.
         June 1, 2024 at 6PM is 2024-06-01_1800.
 
-        The output filename is ReportName_2024-06-01_1800.<ext>.
+        THe output filename will be ReportName_2024-06-01_1800.<ext>.
 
         This parameter is disabled by default.
         This parameter has an alias of ADT.
@@ -196,7 +189,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -Dev [<SwitchParameter>]
         Clears errors at the beginning of the script.
@@ -211,7 +204,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -Log [<SwitchParameter>]
         Generates a log file for troubleshooting.
@@ -220,7 +213,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -ScriptInfo [<SwitchParameter>]
         Outputs information about the script to a text file.
@@ -233,7 +226,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -ReportFooter [<SwitchParameter>]
         Outputs a footer section at the end of the report.
@@ -260,7 +253,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -MSWord [<SwitchParameter>]
         SaveAs DOCX file
@@ -272,7 +265,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -PDF [<SwitchParameter>]
         SaveAs PDF file instead of DOCX file.
@@ -288,10 +281,10 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -CompanyAddress <String>
-        Company Address to use for the Cover Page if the Cover Page has the Address field.
+        Company Address to use for the Cover Page   If the Cover Page has the Address field.
 
         The following Cover Pages have an Address field:
                 Banded (Word 2013/2016)
@@ -311,10 +304,10 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -CompanyEmail <String>
-        Company Email to use for the Cover Page if the Cover Page has the Email field.
+        Company Email to use for the Cover Page   If the Cover Page has the Email field.
 
         The following Cover Pages have an Email field:
                 Facet (Word 2013/2016)
@@ -326,10 +319,10 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -CompanyFax <String>
-        Company Fax to use for the Cover Page if the Cover Page has the Fax field.
+        Company Fax to use for the Cover Page   If the Cover Page has the Fax field.
 
         The following Cover Pages have a Fax field:
                 Contrast (Word 2010)
@@ -342,7 +335,7 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -CompanyName <String>
         Company Name to use for the Cover Page.
@@ -358,10 +351,10 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -CompanyPhone <String>
-        Company Phone to use for the Cover Page if the Cover Page has the Phone field.
+        Company Phone to use for the Cover Page   If the Cover Page has the Phone field.
 
         The following Cover Pages have a Phone field:
                 Contrast (Word 2010)
@@ -374,7 +367,7 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -CoverPage <String>
         What Microsoft Word Cover Page to use.
@@ -392,7 +385,7 @@ PARAMETERS
                 Conservative (Word 2010. Works)
                 Contrast (Word 2010. Works)
                 Cubicles (Word 2010. Works)
-                Exposure (Word 2010. Works if you like looking sideways)
+                Exposure (Word 2010. Works   If you like looking sideways)
                 Facet (Word 2013/2016. Works)
                 Filigree (Word 2013/2016. Works)
                 Grid (Word 2010/2013/2016. Works in 2010)
@@ -402,8 +395,8 @@ PARAMETERS
                 Ion (Light) (Word 2013/2016. Top date doesn't fit; box needs to be
                 manually resized or font changed to 8 point)
                 Mod (Word 2010. Works)
-                Motion (Word 2010/2013/2016. Works if the top date is manually changed to
-                36 point)
+                Motion (Word 2010/2013/2016. Works   If the top date is manually changed
+                to 36 point)
                 Newsprint (Word 2010. Works but the date is not populated)
                 Perspective (Word 2010. Works)
                 Pinstripes (Word 2010. Works)
@@ -429,7 +422,7 @@ PARAMETERS
         Position?                    named
         Default value                Sideline
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -UserName <String>
         Username to use for the Cover Page and Footer.
@@ -441,7 +434,7 @@ PARAMETERS
         Position?                    named
         Default value                $env:username
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -SmtpPort <Int32>
         Specifies the SMTP port for the SmtpServer.
@@ -451,7 +444,7 @@ PARAMETERS
         Position?                    named
         Default value                25
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -SmtpServer <String>
         Specifies the optional email server to send the output report(s).
@@ -462,7 +455,7 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -From <String>
         Specifies the username for the From email address.
@@ -473,7 +466,7 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -To <String>
         Specifies the username for the To email address.
@@ -484,7 +477,7 @@ PARAMETERS
         Position?                    named
         Default value
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     -UseSSL [<SwitchParameter>]
         Specifies whether to use SSL for the SmtpServer.
@@ -494,7 +487,7 @@ PARAMETERS
         Position?                    named
         Default value                False
         Accept pipeline input?       false
-        Accept wildcard characters? false
+        Accept wildcard characters?  false
 
     <CommonParameters>
         This cmdlet supports the common parameters: Verbose, Debug,
@@ -503,31 +496,28 @@ PARAMETERS
         about_CommonParameters (https:/go.microsoft.com/fwlink/?LinkID=113216).
 
 INPUTS
-
-    None. You cannot pipe objects to this script.
+    None.  You cannot pipe objects to this script.
 
 
 OUTPUTS
-
     No objects are output from this script. This script creates a Word, PDF, HTML, or plain
     text document.
 
 
 NOTES
 
-        NAME: XS_Inventory.ps1
-        VERSION: 0.018
-        AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech and the XenServer team
-        LASTEDIT: July 26, 2023
 
-EXAMPLES
+        NAME: XS_Inventory.ps1
+        VERSION: 0.019
+        AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
+        LASTEDIT: July 26, 2023
 
     -------------------------- EXAMPLE 1 --------------------------
 
     PS C:\PSScript >.\XS_Inventory.ps1
 
     Outputs, by default, to HTML.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
@@ -544,7 +534,7 @@ EXAMPLES
         XenServer host named XS01 for the ServerName.
 
     Outputs to Microsoft Word.
-    Prompts for the XenServer Host login credentials.
+    Prompts for the XenServer Pool login credentials.
 
 
 
@@ -560,7 +550,7 @@ EXAMPLES
         Carl Webster for the User Name (alias UN).
 
     Outputs to PDF.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
@@ -581,7 +571,7 @@ EXAMPLES
         +44 1753 276200 for the Company Phone.
 
     Outputs to Microsoft Word.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
@@ -600,7 +590,7 @@ EXAMPLES
         SuperSleuth@SherlockHolmes.com for the Company Email.
 
     Outputs to PDF.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
@@ -619,7 +609,7 @@ EXAMPLES
 
     Creates a text file for transcript logging named
     XSDocScriptTranscript_yyyyMMddTHHmmssffff.txt.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
@@ -630,26 +620,38 @@ EXAMPLES
 
     Creates an HTML report that contains only Pool information.
     Processes only the Pool section of the report.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
 
     -------------------------- EXAMPLE 8 --------------------------
 
-    PS C:\PSScript >.\XS_Inventory.ps1 -Section Pool, Host
+    PS C:\PSScript >.\XS_Inventory.ps1 -ServerName PoolMaster.domain.com -Section Pool
+    -NoPoolMemory -NoPoolStorage -NoPoolNetworking
 
-    Creates an HTML report.
-
-    The report includes only the Pool and Host sections.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Creates an HTML report that contains only Pool information, but with no Memory, Storage, or Networking data.
+    Processes only the Pool section of the report.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
 
     -------------------------- EXAMPLE 9 --------------------------
 
+    PS C:\PSScript >.\XS_Inventory.ps1 -Section Pool, Host
+
+    Creates an HTML report.
+
+    The report includes only the Pool and Host sections.
+    Prompts for the XenServer Pool and login credentials.
+
+
+
+
+    -------------------------- EXAMPLE 10 --------------------------
     PS C:\PSScript >.\XS_Inventory.ps1 -SmtpServer mail.domain.tld -From
+
     XSAdmin@domain.tld -To ITGroup@domain.tld -Text
 
     The script uses the email server mail.domain.tld, sending from XSAdmin@domain.tld
@@ -661,12 +663,12 @@ EXAMPLES
     the user to enter valid credentials.
 
     Outputs to a text file.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
 
-    -------------------------- EXAMPLE 10 --------------------------
+    -------------------------- EXAMPLE 11 --------------------------
 
     PS C:\PSScript >.\XS_Inventory.ps1 -SmtpServer mailrelay.domain.tld -From
     Anonymous@domain.tld -To ITGroup@domain.tld
@@ -693,12 +695,12 @@ EXAMPLES
     account.
 
     Outputs, by default, to HTML.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
 
-    -------------------------- EXAMPLE 11 --------------------------
+    -------------------------- EXAMPLE 12 --------------------------
 
     PS C:\PSScript >.\XS_Inventory.ps1 -SmtpServer
     labaddomain-com.mail.protection.outlook.com -UseSSL -From
@@ -718,12 +720,12 @@ EXAMPLES
     The script uses the default SMTP port 25 and SSL.
 
     Outputs, by default, to HTML.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
 
-    -------------------------- EXAMPLE 12 --------------------------
+    -------------------------- EXAMPLE 13 --------------------------
 
     PS C:\PSScript >.\XS_Inventory.ps1 -SmtpServer smtp.office365.com -SmtpPort 587
     -UseSSL -From Webster@CarlWebster.com -To ITGroup@CarlWebster.com
@@ -735,18 +737,18 @@ EXAMPLES
     the user to enter valid credentials.
 
     Outputs, by default, to HTML.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
 
 
 
 
-    -------------------------- EXAMPLE 13 --------------------------
+    -------------------------- EXAMPLE 14 --------------------------
 
     PS C:\PSScript >.\XS_Inventory.ps1 -SmtpServer smtp.gmail.com -SmtpPort 587
     -UseSSL -From Webster@CarlWebster.com -To ITGroup@CarlWebster.com
 
     *** NOTE ***
-    To send an email using a Gmail or g-suite account, you may have to turn ON the "Less
+    To send an email using a Gmail or G-suite account, you may have to turn ON the "Less
     secure app access" option on your account.
     *** NOTE ***
 
@@ -757,7 +759,10 @@ EXAMPLES
     the user to enter valid credentials.
 
     Outputs, by default, to HTML.
-    Prompts for the XenServer Host or Pool and login credentials.
+    Prompts for the XenServer Pool and login credentials.
+
+
+
 
 
 RELATED LINKS
