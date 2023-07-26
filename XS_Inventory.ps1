@@ -550,6 +550,12 @@ Param(
 #	Started updating Function OutputPoolUsers with data (Webster)
 #	Started working on Function OutputPoolHA (Webster)
 #	Updated Function OutputPoolWLB with data I hope is correct since I don't have a WLB appliance (Webster)
+#	In Function OutputPoolStorage, change the following: (JohnB)
+#       Moved logic from OutputHostStorage to OutputPoolStorage changed it for the pool and save it as script variable
+#       Changed OutputHostStorage to get data from Script variable as it's the same data
+#	In Function OutputPoolNetworking, change the following: (JohnB)
+#       Moved logic from OutputHostNetworking to OutputPoolNetworking changed it for the pool and save it as script variable
+#       Changed OutputHostNetworking to get data from Script variable as it's the same data
 #
 #.017
 #	Add Function OutputPoolGeneralOverview
@@ -5688,6 +5694,7 @@ Function OutputPoolStorage
 	ForEach ($item in $pbds)
 	{
 		$XSHost = $Script:XSHosts | Where-Object {$_.opaque_ref -like $item.host.opaque_ref}
+		$XSHostName = $XSHost.name_label
 		$sr = $item.SR | Get-XenSR -EA 0
 		If ([String]::IsNullOrEmpty($($sr.name_description))) 
 		{
@@ -5717,7 +5724,7 @@ Function OutputPoolStorage
 			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
 		}
 		$XSPoolStorages += $sr | Select-Object -Property `
-		@{Name = 'XSHostName'; Expression = { $XSHost.name_label } },
+		@{Name = 'XSHostName'; Expression = { $XSHostName } },
 		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
 		@{Name = 'Name'; Expression = { $_.name_label } },
 		@{Name = 'Description'; Expression = { $description } },
