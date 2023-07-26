@@ -5701,6 +5701,72 @@ Function OutputPoolStorage
 Function OutputPoolNetworking
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Networking"
+
+	$networks = @(Get-XenNetwork | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
+	$XSNetworks = @()
+	$nrNetworks = $networks.Count
+	If ($nrNetworks -ge 1)
+	{
+		ForEach ($Item in $networks)
+		{
+			$pif = $Item.PIFs | Get-XenPIF | Where-Object { $Script:PoolMasterInfo.opaque_ref -in $_.host }
+			if ([String]::IsNullOrEmpty($pif))
+			{
+				$nic = ""
+				$vlan = ""
+				$autoAssign = "No"
+				$linkStatus = "<None>"
+				$mac = "-"
+			}
+			else
+			{
+				$nic = $pif.device.Replace("eth", "NIC ")
+				
+				If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
+				{
+					$vlan = "-"
+					$mac = $pif.MAC
+				}
+				Else
+				{
+					$vlan = "$($pif.VLAN)"
+					$mac = "-"
+				}
+				if ($Item.other_config["automatic"] -like $true)
+				{
+					$autoAssign = "Yes"
+				}
+				else
+				{
+					$autoAssign = "No"
+				}
+				
+				$pifMetrics = $pif.metrics | Get-XenPIFMetrics
+				if ($pifMetrics.carrier -like $true)
+				{
+					$linkStatus = "Connected"
+				}
+				else
+				{
+					$linkStatus = "Disconnected"
+				}
+			}
+			$XSNetworks += $Item | Select-Object -Property `
+			@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
+			@{Name = 'Description'; Expression = { $_.name_description } },
+			@{Name = 'NIC'; Expression = { $nic } },
+			@{Name = 'VLAN'; Expression = { $vlan } },
+			@{Name = 'Auto'; Expression = { $autoAssign } },
+			@{Name = 'LinkStatus'; Expression = { $linkStatus } },
+			@{Name = 'MAC'; Expression = { $mac } },
+			@{Name = 'MTU'; Expression = { $item.MTU } },
+			@{Name = 'SRIOV'; Expression = { "" } }
+		}
+	}
+	$XSNetworks = $XSNetworks | Sort-Object -Property Name	
+	$Script:XSPoolNetworks = $XSNetworks
+	
+	$nrNetworking = $XSNetworks.Count
 	If ($MSWord -or $PDF)
 	{
 		$Selection.InsertNewPage()
@@ -5715,7 +5781,114 @@ Function OutputPoolNetworking
 	{
 		WriteHTMLLine 2 0 "Networking"
 	}
-	
+
+	If ($nrNetworking -lt 1)
+	{
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no networks configured for Host $XSHostName"
+		}
+		If ($Text)
+		{
+			Line 3 "There are no Network networks configured for Host $XSHostName"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no networks configured for Host $XSHostName"
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrNetworking"; }
+		}
+		If ($Text)
+		{
+			Line 3 "Number of networks: " "$nrNetworking"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Number of networks", ($htmlsilver -bor $htmlbold), "$nrNetworking", $htmlwhite)
+			$rowdata = @()
+		}
+
+		ForEach ($Item in $XSNetworks)
+		{
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
+				$ScriptInformation += @{ Data = "     NIC"; Value = $($item.NIC); }
+				$ScriptInformation += @{ Data = "     VLAN"; Value = $($item.VLAN); }
+				$ScriptInformation += @{ Data = "     Auto"; Value = $($item.Auto); }
+				$ScriptInformation += @{ Data = "     Link Status"; Value = $($item.LinkStatus); }
+				$ScriptInformation += @{ Data = "     MAC"; Value = $($item.MAC); }
+				$ScriptInformation += @{ Data = "     MTU"; Value = $($item.MTU); }
+				$ScriptInformation += @{ Data = "     SR-IOV"; Value = $($item.SRIOV); }
+			}
+			If ($Text)
+			{
+				Line 3 "Name: " $($item.Name)
+				Line 4 "Description`t: " $($item.Description)
+				Line 4 "NIC`t`t: " $($item.NIC)
+				Line 4 "VLAN`t`t: " $($item.VLAN)
+				Line 4 "Auto`t`t: " $($item.Auto)
+				Line 4 "Link Status`t: " $($item.LinkStatus)
+				Line 4 "MAC`t`t: " $($item.MAC)
+				Line 4 "MTU`t`t: " $($item.MTU)
+				Line 4 "SR-IOV`t`t: " $($item.SRIOV)
+				Line 0 ""
+			}
+			If ($HTML)
+			{
+				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+				$rowdata += @(, ("     NIC", ($htmlsilver -bor $htmlbold), $($item.NIC), $htmlwhite))
+				$rowdata += @(, ("     VLAN", ($htmlsilver -bor $htmlbold), $($item.VLAN), $htmlwhite))
+				$rowdata += @(, ("     Auto", ($htmlsilver -bor $htmlbold), $($item.Auto), $htmlwhite))
+				$rowdata += @(, ("     Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus), $htmlwhite))
+				$rowdata += @(, ("     MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
+				$rowdata += @(, ("     MTU", ($htmlsilver -bor $htmlbold), $($item.MTU), $htmlwhite))
+				$rowdata += @(, ("     SRIOV", ($htmlsilver -bor $htmlbold), $($item.SRIOV), $htmlwhite))
+			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 175;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("150", "200")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
 }
 
 Function OutputPoolGPU
@@ -7646,68 +7819,8 @@ Function OutputHostNetworking
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Networking"
 
-	$XSHostName = $XSHost.Name_Label
-	$XSNetworks = @(Get-XenNetwork | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
-	$networks = @()
-	$nrNICs = $XSNetworks.Count
-	If ($nrNICs -ge 1)
-	{
-		ForEach ($Item in $XSNetworks)
-		{
-			$pif = $Item.PIFs | Get-XenPIF | Where-Object { $XSHost.opaque_ref -in $_.host }
-			if ([String]::IsNullOrEmpty($pif))
-			{
-				$nic = ""
-				$vlan = ""
-				$autoAssign = "No"
-				$linkStatus = "<None>"
-				$mac = "-"
-			}
-			else
-			{
-				$nic = $pif.device.Replace("eth", "NIC ")
-				
-				If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
-				{
-					$vlan = "-"
-					$mac = $pif.MAC
-				}
-				Else
-				{
-					$vlan = "$($pif.VLAN)"
-					$mac = "-"
-				}
-				if ($Item.other_config["automatic"] -like $true)
-				{
-					$autoAssign = "Yes"
-				}
-				else
-				{
-					$autoAssign = "No"
-				}
-				
-				$pifMetrics = $pif.metrics | Get-XenPIFMetrics
-				if ($pifMetrics.carrier -like $true)
-				{
-					$linkStatus = "Connected"
-				}
-				else
-				{
-					$linkStatus = "Disconnected"
-				}
-			}
-			$networks += $Item | Select-Object -Property `
-			@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
-			@{Name = 'Description'; Expression = { $_.name_description } },
-			@{Name = 'NIC'; Expression = { $nic } },
-			@{Name = 'VLAN'; Expression = { $vlan } },
-			@{Name = 'Auto'; Expression = { $autoAssign } },
-			@{Name = 'LinkStatus'; Expression = { $linkStatus } },
-			@{Name = 'MAC'; Expression = { $mac } },
-			@{Name = 'MTU'; Expression = { $item.MTU } }
-		}
-	}
-	$networks = $networks | Sort-Object -Property Name
+	$XSNetworks = $Script:XSPoolNetworks
+	$nrNetworking = $XSNetworks.Count
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 3 0 "Networking"
@@ -7721,7 +7834,7 @@ Function OutputHostNetworking
 		WriteHTMLLine 3 0 "Networking"
 	}
 
-	If ($nrNICs -lt 1)
+	If ($nrNetworking -lt 1)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -7742,20 +7855,20 @@ Function OutputHostNetworking
 		If ($MSWord -or $PDF)
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
-			$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrNICs"; }
+			$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrNetworking"; }
 		}
 		If ($Text)
 		{
-			Line 3 "Number of networks: " "$nrNICs"
+			Line 3 "Number of networks: " "$nrNetworking"
 			Line 0 ""
 		}
 		If ($HTML)
 		{
-			$columnHeaders = @("Number of networks", ($htmlsilver -bor $htmlbold), "$nrNICs", $htmlwhite)
+			$columnHeaders = @("Number of networks", ($htmlsilver -bor $htmlbold), "$nrNetworking", $htmlwhite)
 			$rowdata = @()
 		}
 
-		ForEach ($Item in $networks)
+		ForEach ($Item in $XSNetworks)
 		{
 			If ($MSWord -or $PDF)
 			{
@@ -7767,6 +7880,7 @@ Function OutputHostNetworking
 				$ScriptInformation += @{ Data = "     Link Status"; Value = $($item.LinkStatus); }
 				$ScriptInformation += @{ Data = "     MAC"; Value = $($item.MAC); }
 				$ScriptInformation += @{ Data = "     MTU"; Value = $($item.MTU); }
+				$ScriptInformation += @{ Data = "     SR-IOV"; Value = $($item.SRIOV); }
 			}
 			If ($Text)
 			{
@@ -7778,6 +7892,7 @@ Function OutputHostNetworking
 				Line 4 "Link Status`t: " $($item.LinkStatus)
 				Line 4 "MAC`t`t: " $($item.MAC)
 				Line 4 "MTU`t`t: " $($item.MTU)
+				Line 4 "SR-IOV`t`t: " $($item.SRIOV)
 				Line 0 ""
 			}
 			If ($HTML)
@@ -7790,6 +7905,7 @@ Function OutputHostNetworking
 				$rowdata += @(, ("     Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus), $htmlwhite))
 				$rowdata += @(, ("     MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
 				$rowdata += @(, ("     MTU", ($htmlsilver -bor $htmlbold), $($item.MTU), $htmlwhite))
+				$rowdata += @(, ("     SR-IOV", ($htmlsilver -bor $htmlbold), $($item.SRIOV), $htmlwhite))
 			}
 		}
 		
