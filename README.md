@@ -139,7 +139,7 @@ PARAMETERS
         Accept pipeline input?       false
         Accept wildcard characters? false
 
--NoPoolMemory [<SwitchParameter>]
+    -NoPoolMemory [<SwitchParameter>]
 	Excludes Pool Memory information from the output document.
 	
 	This Switch is useful in large XenServer pools, where there may be many hosts.
@@ -153,7 +153,7 @@ PARAMETERS
         Accept pipeline input?       false
         Accept wildcard characters? false
 
--NoPoolStorage [<SwitchParameter>]
+    -NoPoolStorage [<SwitchParameter>]
 	Excludes Pool Storage information from the output document.
 	
 	This Switch is useful in large XenServer pools, where there may be many storage repositories and hosts.
@@ -167,7 +167,7 @@ PARAMETERS
         Accept pipeline input?       false
         Accept wildcard characters? false
 
--NoPoolNetworking [<SwitchParameter>]
+    -NoPoolNetworking [<SwitchParameter>]
         Excludes Pool Networking information from the output document.
 	
 	This Switch is useful in large XenServer pools, where there may be many hosts.
@@ -181,7 +181,7 @@ PARAMETERS
         Accept pipeline input?       false
         Accept wildcard characters? false
 
--AddDateTime [<SwitchParameter>]
+    -AddDateTime [<SwitchParameter>]
         Adds a date timestamp to the end of the file name.
 
         The timestamp is in the format of yyyy-MM-dd_HHmm.
