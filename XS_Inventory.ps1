@@ -5861,70 +5861,83 @@ Function OutputPoolNetworking
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Networking"
 
-	$networks = @(Get-XenNetwork | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
+	$networks = @(Get-XenNetwork -EA 0 | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
 	$XSNetworks = @()
 	$nrNetworks = $networks.Count
 	If ($nrNetworks -ge 1)
 	{
 		ForEach ($Item in $networks)
 		{
-			$pif = $Item.PIFs | Get-XenPIF | Where-Object { $Script:PoolMasterInfo.opaque_ref -in $_.host }
-			if ([String]::IsNullOrEmpty($pif))
-			{
-				$nic = ""
-				$vlan = ""
-				$autoAssign = "No"
-				$linkStatus = "<None>"
-				$mac = "-"
-			}
-			else
-			{
-				$nic = $pif.device.Replace("eth", "NIC ")
-				
-				If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
+			ForEach ($XSHost in $Script:XSHosts)  {
+				$pif = $Item.PIFs | Get-XenPIF -EA 0 | Where-Object { $XSHost.opaque_ref -in $_.host }
+				if ([String]::IsNullOrEmpty($pif))
 				{
-					$vlan = "-"
-					$mac = $pif.MAC
-				}
-				Else
-				{
-					$vlan = "$($pif.VLAN)"
+					$nic = ""
+					$vlan = ""
+					$autoAssign = "No"
+					$linkStatus = "<None>"
 					$mac = "-"
 				}
-				if ($Item.other_config["automatic"] -like $true)
-				{
-					$autoAssign = "Yes"
-				}
 				else
 				{
-					$autoAssign = "No"
+					$nic = $pif.device.Replace("eth", "NIC ")
+					
+					If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
+					{
+						$vlan = "-"
+						$mac = $pif.MAC
+					}
+					Else
+					{
+						$vlan = "$($pif.VLAN)"
+						$mac = "-"
+					}
+					if ($Item.other_config["automatic"] -like $true)
+					{
+						$autoAssign = "Yes"
+					}
+					else
+					{
+						$autoAssign = "No"
+					}
+					
+					$pifMetrics = $pif.metrics | Get-XenPIFMetrics
+					if ($pifMetrics.carrier -like $true)
+					{
+						$linkStatus = "Connected"
+					}
+					else
+					{
+						$linkStatus = "Disconnected"
+					}
 				}
-				
-				$pifMetrics = $pif.metrics | Get-XenPIFMetrics
-				if ($pifMetrics.carrier -like $true)
+				if (($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref))
 				{
-					$linkStatus = "Connected"
+					$hostIsPoolMaster = $true
 				}
-				else
-				{
-					$linkStatus = "Disconnected"
+				else {
+					$hostIsPoolMaster = $false
 				}
+				$XSNetworks += $Item | Select-Object -Property `
+				@{Name = 'XSHostname'; Expression = { $XSHost.name_label } },
+				@{Name = 'XSHostref'; Expression = { $XSHost.opaque_ref } },
+				@{Name = 'XSHostPoolMaster'; Expression = { $hostIsPoolMaster } },
+				@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
+				@{Name = 'Description'; Expression = { $_.name_description } },
+				@{Name = 'NIC'; Expression = { $nic } },
+				@{Name = 'VLAN'; Expression = { $vlan } },
+				@{Name = 'Auto'; Expression = { $autoAssign } },
+				@{Name = 'LinkStatus'; Expression = { $linkStatus } },
+				@{Name = 'MAC'; Expression = { $mac } },
+				@{Name = 'MTU'; Expression = { $item.MTU } },
+				@{Name = 'SRIOV'; Expression = { "" } }
 			}
-			$XSNetworks += $Item | Select-Object -Property `
-			@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
-			@{Name = 'Description'; Expression = { $_.name_description } },
-			@{Name = 'NIC'; Expression = { $nic } },
-			@{Name = 'VLAN'; Expression = { $vlan } },
-			@{Name = 'Auto'; Expression = { $autoAssign } },
-			@{Name = 'LinkStatus'; Expression = { $linkStatus } },
-			@{Name = 'MAC'; Expression = { $mac } },
-			@{Name = 'MTU'; Expression = { $item.MTU } },
-			@{Name = 'SRIOV'; Expression = { "" } }
 		}
 	}
-	$XSNetworks = $XSNetworks | Sort-Object -Property Name	
+	$XSNetworks = @($XSNetworks | Sort-Object -Property XSHostname, Name)
 	$Script:XSPoolNetworks = $XSNetworks
-	
+	#Choose to use poolmaster data as original XenCenter pool data is more or less "random"
+	$XSNetworks = $XSNetworks | Where-Object { $_.XSHostPoolMaster -eq $true}
 	$nrNetworking = $XSNetworks.Count
 	If ($MSWord -or $PDF)
 	{
@@ -7937,8 +7950,8 @@ Function OutputHostNetworking
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Networking"
 
-	$XSNetworks = $Script:XSPoolNetworks
-	$nrNetworking = $XSNetworks.Count
+	$XSHostNetworks = @($Script:XSPoolNetworks | Where-Object {$_.XSHostRef -like $XSHost.opaque_ref} )
+	$nrNetworking = $XSHostNetworks.Count
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 3 0 "Networking"
@@ -7986,7 +7999,7 @@ Function OutputHostNetworking
 			$rowdata = @()
 		}
 
-		ForEach ($Item in $XSNetworks)
+		ForEach ($Item in $XSHostNetworks)
 		{
 			If ($MSWord -or $PDF)
 			{
