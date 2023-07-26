@@ -5681,6 +5681,56 @@ Function OutputPoolMemory
 Function OutputPoolStorage
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Storage"
+	
+	$pbds =  Get-XenPBD | Where-Object { $_.host.opaque_ref -in $Script:XSHosts.opaque_ref }
+
+	$XSPoolStorages = @()
+	ForEach ($item in $pbds)
+	{
+		$XSHost = $Script:XSHosts | Where-Object {$_.opaque_ref -like $item.host.opaque_ref}
+		$sr = $item.SR | Get-XenSR -EA 0
+		If ([String]::IsNullOrEmpty($($sr.name_description))) 
+		{
+			$description = '{0} on {1}' -f $sr.name_label, $XSHostName
+		}
+		Else
+		{
+			$description = $($sr.name_description)
+		}
+		If ($sr.shared -like $true)
+		{
+			$shared = "yes"
+		}
+		Else
+		{
+			$shared = "no"
+		}
+		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
+		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
+		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
+		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
+		{
+			$usage = '0% (0 B)'
+		}
+		Else
+		{
+			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
+		}
+		$XSPoolStorages += $sr | Select-Object -Property `
+		@{Name = 'XSHostName'; Expression = { $XSHost.name_label } },
+		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
+		@{Name = 'Name'; Expression = { $_.name_label } },
+		@{Name = 'Description'; Expression = { $description } },
+		@{Name = 'Type'; Expression = { $_.type } },
+		@{Name = 'Shared'; Expression = { $shared } },
+		@{Name = 'Usage'; Expression = { $usage } },
+		@{Name = 'Size'; Expression = { $size } },
+		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } }
+	}
+	$XSPoolStorages = @($XSPoolStorages | Sort-Object -Property XSHostName, Name)
+	$storageCount = $XSPoolStorages.Count
+	$Script:XSPoolStorages = $XSPoolStorages
+
 	If ($MSWord -or $PDF)
 	{
 		$Selection.InsertNewPage()
@@ -5695,7 +5745,109 @@ Function OutputPoolStorage
 	{
 		WriteHTMLLine 2 0 "Storage"
 	}
-	
+
+	If ($storageCount -lt 1)
+	{
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There is no storage configured for Host $XSHostName"
+		}
+		If ($Text)
+		{
+			Line 3 "There is no storage configured for Host $XSHostName"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There is no storage configured for Host $XSHostName"
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Number of storages"; Value = "$storageCount"; }
+		}
+		If ($Text)
+		{
+			Line 3 "Number of storages: " "$storageCount"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Number of storages", ($htmlsilver -bor $htmlbold), "$storageCount", $htmlwhite)
+			$rowdata = @()
+		}
+
+		ForEach ($Item in $XSPoolStorages)
+		{
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
+				$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
+				$ScriptInformation += @{ Data = "     Shared"; Value = $($item.Shared); }
+				$ScriptInformation += @{ Data = "     Usage"; Value = $($item.Usage); }
+				$ScriptInformation += @{ Data = "     Size"; Value = $($item.Size); }
+				$ScriptInformation += @{ Data = "     Virtual allocation"; Value = $($item.VirtualAllocation); }
+			}
+			If ($Text)
+			{
+				Line 3 "Name: " $($item.Name)
+				Line 4 "Description`t`t: " $($item.Description)
+				Line 4 "Type`t`t`t: " $($item.Type)
+				Line 4 "Shared`t`t`t: " $($item.Shared)
+				Line 4 "Usage`t`t`t: " $($item.Usage)
+				Line 4 "Size`t`t`t: " $($item.Size)
+				Line 4 "Virtual allocation`t: " $($item.VirtualAllocation)
+				Line 0 ""
+			}
+			If ($HTML)
+			{
+				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+				$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
+				$rowdata += @(, ("     Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
+				$rowdata += @(, ("     Usage", ($htmlsilver -bor $htmlbold), $($item.Usage), $htmlwhite))
+				$rowdata += @(, ("     Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
+				$rowdata += @(, ("     Virtual allocation", ($htmlsilver -bor $htmlbold), $($item.VirtualAllocation), $htmlwhite))
+			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("150", "350")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+
 }
 
 Function OutputPoolNetworking
@@ -7651,50 +7803,9 @@ Function OutputHostStorage
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Storage"
 
-	$XSHostName = $XSHost.Name_Label
-	$pbds = $XSHost.PBDs | Get-XenPBD
-
-	$storages = @()
-	ForEach ($item in $pbds)
-	{
-		$sr = Get-XenSR -Ref $item.SR
-		If ([String]::IsNullOrEmpty($($sr.name_description))) 
-		{
-			$description = '{0} on {1}' -f $sr.name_label, $XSHostName
-		}
-		Else
-		{
-			$description = $($sr.name_description)
-		}
-		If ($sr.shared -like $true)
-		{
-			$shared = "yes"
-		}
-		Else
-		{
-			$shared = "no"
-		}
-		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
-		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
-		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
-		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
-		{
-			$usage = '0% (0 B)'
-		}
-		Else
-		{
-			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
-		}
-		$storages += $sr | Select-Object -Property `
-		@{Name = 'Name'; Expression = { $_.name_label } },
-		@{Name = 'Description'; Expression = { $description } },
-		@{Name = 'Type'; Expression = { $_.type } },
-		@{Name = 'Shared'; Expression = { $shared } },
-		@{Name = 'Usage'; Expression = { $usage } },
-		@{Name = 'Size'; Expression = { $size } },
-		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } }
-	}
-	$storageCount = $storages.Count
+	$XSHostStorages = @($Script:XSPoolStorages | Where-Object {$_.XSHostRef -like $XSHost.opaque_ref} )
+	
+	$storageCount = $XSHostStorages.Count
 
 	If ($MSWord -or $PDF)
 	{
@@ -7743,7 +7854,7 @@ Function OutputHostStorage
 			$rowdata = @()
 		}
 
-		ForEach ($Item in $storages)
+		ForEach ($Item in $XSHostStorages)
 		{
 			If ($MSWord -or $PDF)
 			{
