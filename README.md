@@ -168,7 +168,7 @@ PARAMETERS
         Accept wildcard characters? false
 
 -NoPoolNetworking [<SwitchParameter>]
-	Excludes Pool Networking information from the output document.
+        Excludes Pool Networking information from the output document.
 	
 	This Switch is useful in large XenServer pools, where there may be many hosts.
 	
