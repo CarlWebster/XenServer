@@ -68,9 +68,9 @@ PARAMETERS
         If entered as an IP address, the script attempts o determine and use the actual
         pool or poolmaster name.
 	
-	ServerName should be the Pool Master. If you use a Slave host, the script attempts 
-	to determine the Pool Master and then makes a connection attempt to the Pool Master. 
-	If successful, the script continues. If not successful, the script ends.
+        ServerName should be the Pool Master. If you use a Slave host, the script attempts 
+        to determine the Pool Master and then makes a connection attempt to the Pool Master. 
+        If successful, the script continues. If not successful, the script ends.
 
         Required?                    true
         Position?                    named
