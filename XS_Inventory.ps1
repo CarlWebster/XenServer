@@ -68,6 +68,27 @@
 	This parameter defaults to All sections.
 	
 	A comma separates multiple sections. -Section host, pool
+.PARAMETER NoPoolMemory
+	Excludes Pool Memory information from the output document.
+	
+	This Switch is useful in large XenServer pools, where there may be many hosts.
+	
+	This parameter is disabled by default.
+	This parameter has an alias of NPM.
+.PARAMETER NoPoolStorage
+	Excludes Pool Storage information from the output document.
+	
+	This Switch is useful in large XenServer pools, where there may be many storage repositories and hosts.
+	
+	This parameter is disabled by default.
+	This parameter has an alias of NPS.
+.PARAMETER NoPoolNetworking
+	Excludes Pool Networking information from the output document.
+	
+	This Switch is useful in large XenServer pools, where there may be many hosts.
+	
+	This parameter is disabled by default.
+	This parameter has an alias of NPN.
 .PARAMETER AddDateTime
 	Adds a date timestamp to the end of the file name.
 	
@@ -463,6 +484,18 @@ Param(
 	[parameter(Mandatory = $False)] 
 	[String[]] $Section = 'All',
 	
+	[parameter(Mandatory=$False)] 
+	[Alias("NPM")]
+	[Switch]$NoPoolMemory=$False,	
+	
+	[parameter(Mandatory=$False)] 
+	[Alias("NPS")]
+	[Switch]$NoPoolStorage=$False,	
+	
+	[parameter(Mandatory=$False)] 
+	[Alias("NPN")]
+	[Switch]$NoPoolNetworking=$False,	
+	
 	[parameter(Mandatory = $False)] 
 	[Alias("ADT")]
 	[Switch]$AddDateTime = $False,
@@ -547,15 +580,16 @@ Param(
 #Created on June 27, 2023
 #
 #.018
-#	Started updating Function OutputPoolUsers with data (Webster)
-#	Started working on Function OutputPoolHA (Webster)
+#	Added Switch Parameters NoPoolMemory, NoPoolStorage, and NoPoolNetworking (Webster)
+#	Updated Function OutputPoolUsers with data (Webster and JohnB)
+#	Updated Function OutputPoolHA with data (Webster)
 #	Updated Function OutputPoolWLB with data I hope is correct since I don't have a WLB appliance (Webster)
 #	In Function OutputPoolStorage, change the following: (JohnB)
-#       Moved logic from OutputHostStorage to OutputPoolStorage changed it for the pool and save it as script variable
-#       Changed OutputHostStorage to get data from Script variable as it's the same data
+#       	Moved logic from OutputHostStorage to OutputPoolStorage changed it for the pool and save it as script variable
+#       	Changed OutputHostStorage to get data from Script variable as it's the same data
 #	In Function OutputPoolNetworking, change the following: (JohnB)
-#       Moved logic from OutputHostNetworking to OutputPoolNetworking changed it for the pool and save it as script variable
-#       Changed OutputHostNetworking to get data from Script variable as it's the same data
+#       	Moved logic from OutputHostNetworking to OutputPoolNetworking changed it for the pool and save it as script variable
+#       	Changed OutputHostNetworking to get data from Script variable as it's the same data
 #
 #.017
 #	Add Function OutputPoolGeneralOverview
@@ -4390,9 +4424,30 @@ Function ProcessPool
 		OutputPoolLivePatching
 		OutputPoolNetworkOptions
 		OutputPoolClustering
-		OutputPoolMemory
-		OutputPoolStorage
-		OutputPoolNetworking
+		If($NoPoolMemory)
+		{
+			#nothing, avoid a double negative
+		}
+		Else
+		{
+			OutputPoolMemory
+		}
+		If($NoPoolStorage)
+		{
+			#nothing, avoid a double negative
+		}
+		Else
+		{
+			OutputPoolStorage
+		}
+		If($NoPoolMemory)
+		{
+			#nothing, avoid a double negative
+		}
+		Else
+		{
+			OutputPoolNetworking
+		}
 		OutputPoolGPU
 		OutputPoolHA
 		OutputPoolWLB
@@ -6106,7 +6161,10 @@ Function OutputPoolHA
 		If ($MSWord -or $PDF)
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
-			$ScriptInformation += @{ Data = ""; Value = ""; }
+			$ScriptInformation += @{ Data = "Configuration"; Value = ""; }
+			$ScriptInformation += @{ Data = "     Pool HA enabled"; Value = "Yes"; }
+			$ScriptInformation += @{ Data = "     Configured failure capacity"; Value = $Script:XSPool.ha_host_failures_to_tolerate.ToString(); }
+			$ScriptInformation += @{ Data = "     Current failure capacity"; Value = $Script:XSPool.ha_plan_exists_for.ToString(); }
 
 			$Table = AddWordTable -Hashtable $ScriptInformation `
 				-Columns Data, Value `
@@ -6128,14 +6186,19 @@ Function OutputPoolHA
 		}
 		If ($Text)
 		{
-			Line 2 ""
+			Line 2 "Configuration"
+			Line 3 "Pool HA enabled            : " "Yes"
+			Line 3 "Configured failure capacity: " $Script:XSPool.ha_host_failures_to_tolerate.ToString()
+			Line 3 "Current failure capacity   : " $Script:XSPool.ha_plan_exists_for.ToString()
 			Line 0 ""
 		}
 		If ($HTML)
 		{
 			$rowdata = @()
-			$columnHeaders = @("", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
-			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+			$columnHeaders = @("Configuration", ($htmlsilver -bor $htmlbold),"",$htmlwhite)
+			$rowdata += @(, ("     Pool HA enabled", ($htmlsilver -bor $htmlbold),"Yes",$htmlwhite))
+			$rowdata += @(, ("     Configured failure capacity", ($htmlsilver -bor $htmlbold),$Script:XSPool.ha_host_failures_to_tolerate.ToString(),$htmlwhite))
+			$rowdata += @(, ("     Current failure capacity", ($htmlsilver -bor $htmlbold),$Script:XSPool.ha_plan_exists_for.ToString(),$htmlwhite))
 
 			$msg = ""
 			$columnWidths = @("150", "250")
@@ -6372,6 +6435,148 @@ Function OutputPoolUsers
 	}
 	
 	#user info
+	#code by JB
+	$subjects = Get-XenSubject -EA 0
+	$users = @()
+	ForEach ($item in $subjects) {
+	    $roles = $item.roles | Get-XenRole
+		if ($item.IsGroup) {
+		    $type = "Group"
+		} else {
+		    $type = "User"
+		}
+	    $users += $item | Select-Object -Property `
+			@{Name = 'Type'; Expression = { $type } },
+			@{Name = 'Subject'; Expression = { $_.SubjectName } },
+			@{Name = 'Name'; Expression = { $_.DisplayName } },
+			@{Name = 'Roles'; Expression = { $roles.name_label -join ", " } },
+			@{Name = 'AccountDisabled'; Expression = { $item.other_config["subject-account-disabled"] } },
+			@{Name = 'AccountExpired'; Expression = { $item.other_config["subject-account-expired"] } },
+			@{Name = 'AccountLocked'; Expression = { $item.other_config["subject-account-locked"] } },
+			@{Name = 'PasswordExpired'; Expression = { $item.other_config["subject-password-expired"] } }
+	}
+	$users = @($users | Sort-Object -Property Type, Name)
+	
+	#role names
+	<#
+		Pool Admin     - pool-admin
+		Pool Operator  - pool-operator
+		VM Power Admin - vm-power-admin
+		VM Admin       - vm-admin
+		VM Operator    - vm-operator
+		Read Only      - read-only
+	#>
+	
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "User and Groups with Access"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Type"; Value = "User"; }
+		$ScriptInformation += @{ Data = "Subject"; Value = "Local root account"; }
+		$ScriptInformation += @{ Data = "Roles"; Value = "(Always granted access)"; }
+		$ScriptInformation += @{ Data = ""; Value = ""; }
+	}
+	If ($Text)
+	{
+		Line 2 "User and Groups with Access"
+		Line 3 "Type            : User"
+		Line 3 "Subject         : Local root account"
+		Line 3 "Roles           : (Always granted access)"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "User and Groups with Access"
+		$rowdata = @()
+		$columnHeaders = @("Type", ($htmlsilver -bor $htmlbold), "User", $htmlwhite)
+		$rowdata += @(, ("Subject", ($htmlsilver -bor $htmlbold), "Local root account", $htmlwhite))
+		$rowdata += @(, ("Roles", ($htmlsilver -bor $htmlbold), "(Always granted access)", $htmlwhite))
+		$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+	}
+	
+	ForEach($User in $Users)
+	{
+		Switch($User.Roles)
+		{
+			"pool-admin"		{$UserRole = "Pool Admin"; Break}
+			"pool-operator"		{$UserRole = "Pool Operator"; Break}
+			"vm-power-admin"	{$UserRole = "VM Power Admin"; Break}
+			"vm-admin"		{$UserRole = "VM Admin"; Break}
+			"vm-operator"		{$UserRole = "VM Operator"; Break}
+			"read-only"		{$UserRole = "Read Only"; Break}
+			Default 		{$UserRole = "Unable to determine the user role: $($User.Roles)"; Break}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Type"; Value = $User.Type; }
+			$ScriptInformation += @{ Data = "Subject"; Value = $User.Subject; }
+			$ScriptInformation += @{ Data = "Name"; Value = $User.Name; }
+			$ScriptInformation += @{ Data = "Roles"; Value = $UserRole; }
+			$ScriptInformation += @{ Data = "Account disabled"; Value = $User.AccountDisabled; }
+			$ScriptInformation += @{ Data = "Account expired"; Value = $User.AccountExpired; }
+			$ScriptInformation += @{ Data = "Account locked"; Value = $User.AccountLocked; }
+			$ScriptInformation += @{ Data = "Password expired"; Value = $User.PasswordExpired; }
+			$ScriptInformation += @{ Data = ""; Value = ""; }
+		}
+		If ($Text)
+		{
+			Line 3 "Type            : " $User.Type
+			Line 3 "Subject         : " $User.Subject
+			Line 3 "Name            : " $User.Name
+			Line 3 "Roles           : " $UserRole
+			Line 3 "Account disabled: " $User.AccountDisabled
+			Line 3 "Account expired : " $User.AccountExpired
+			Line 3 "Account locked  : " $User.AccountLocked
+			Line 3 "Password expired: " $User.PasswordExpired
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$rowdata += @(, ("Type", ($htmlsilver -bor $htmlbold),$User.Type,$htmlwhite))
+			$rowdata += @(, ("Subject", ($htmlsilver -bor $htmlbold),$User.Subject,$htmlwhite))
+			$rowdata += @(, ("Names", ($htmlsilver -bor $htmlbold),$User.Name,$htmlwhite))
+			$rowdata += @(, ("Roles", ($htmlsilver -bor $htmlbold),$UserRole,$htmlwhite))
+			$rowdata += @(, ("Account disabled", ($htmlsilver -bor $htmlbold),$User.AccountDisabled,$htmlwhite))
+			$rowdata += @(, ("Account expired", ($htmlsilver -bor $htmlbold),$User.AccountExpired,$htmlwhite))
+			$rowdata += @(, ("Account locked", ($htmlsilver -bor $htmlbold),$User.AccountLocked,$htmlwhite))
+			$rowdata += @(, ("Password expired", ($htmlsilver -bor $htmlbold),$User.PasswordExpired,$htmlwhite))
+			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold),"", $htmlwhite))
+		}
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+
 }
 #endregion
 
