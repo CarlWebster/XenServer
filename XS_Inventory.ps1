@@ -591,10 +591,10 @@ Param(
 #
 #.019
 #	In Function OutputPoolStorage, change the following: (JohnB)
-#       	Changed OutputHostStorage to gather the data but not show output when specified $NoPoolStorage
+#       Changed OutputHostStorage to gather the data but not show output when specified $NoPoolStorage
 #	
 #	In Function OutputPoolNetworking, change the following: (JohnB)
-#       	Changed OutputHostNetworking to gather the data but not show output when specified $NoPoolNetworking
+#       Changed OutputHostNetworking to gather the data but not show output when specified $NoPoolNetworking
 #
 #.019
 #	Updated the help text by fixing grammar and spelling issues and adding a new example (Webster)
@@ -5750,6 +5750,7 @@ Function OutputPoolStorage
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Storage"
 	
+	Write-Verbose "$(Get-Date -Format G): `t Pool Storage Gathering data"
 	$pbds = Get-XenPBD | Where-Object { $_.host.opaque_ref -in $Script:XSHosts.opaque_ref }
 
 	$XSPoolStorages = @()
@@ -5802,6 +5803,7 @@ Function OutputPoolStorage
 
 	if ($NoPoolStorage -eq $false) 
 	{
+		Write-Verbose "$(Get-Date -Format G): `t Pool Storage writing output"
 		If ($MSWord -or $PDF)
 		{
 			$Selection.InsertNewPage()
@@ -5919,12 +5921,16 @@ Function OutputPoolStorage
 			}
 		}
 	}
+	Else
+	{
+		Write-Verbose "$(Get-Date -Format G): `t Pool Networking skipped"
+	}
 }
 
 Function OutputPoolNetworking
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Networking"
-
+	Write-Verbose "$(Get-Date -Format G): `t Gathering Networking data"
 	$networks = @(Get-XenNetwork -EA 0 | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
 	$XSNetworks = @()
 	$nrNetworks = $networks.Count
@@ -5933,7 +5939,7 @@ Function OutputPoolNetworking
 		ForEach ($Item in $networks)
 		{
 			ForEach ($XSHost in $Script:XSHosts)
-   {
+               {
 				$pif = $Item.PIFs | Get-XenPIF -EA 0 | Where-Object { $XSHost.opaque_ref -in $_.host }
 				if ([String]::IsNullOrEmpty($pif))
 				{
@@ -6005,6 +6011,7 @@ Function OutputPoolNetworking
 	#Choose to use Pool Master data as original XenCenter pool data is more or less "random"
 	if ($NoPoolNetworking -eq $false) 
 	{
+		Write-Verbose "$(Get-Date -Format G): `t Pool Networking writing output"
 		$XSNetworks = $XSNetworks | Where-Object { $_.XSHostPoolMaster -eq $true }
 		$nrNetworking = $XSNetworks.Count
 		If ($MSWord -or $PDF)
@@ -6129,6 +6136,8 @@ Function OutputPoolNetworking
 				WriteHTMLLine 0 0 ""
 			}
 		}
+	} else {
+		Write-Verbose "$(Get-Date -Format G): `t Pool Networking skipped"
 	}
 }
 
