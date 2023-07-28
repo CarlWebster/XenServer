@@ -465,7 +465,7 @@
 	NAME: XS_Inventory.ps1
 	VERSION: 0.020
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: July 27, 2023
+	LASTEDIT: July 28, 2023
 #>
 
 #endregion
@@ -850,7 +850,7 @@ $Error.Clear()
 $Script:emailCredentials = $Null
 $script:MyVersion = '0.020'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/27/2023"
+$tmpdate = [datetime] "07/28/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -5818,7 +5818,7 @@ Function OutputPoolMemory
 				$ScriptInformation += @{ Data = "VMs"; Value = "$($XSHostMemory.VMs)"; }
 				$XSHostMemory.VMTexts | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
 				$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
-				$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($iXSHostMemorytem.ControlDomainMemory)"; }
+				$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($XSHostMemory.ControlDomainMemory)"; }
 				$ScriptInformation += @{ Data = "Available memory"; Value = "$($XSHostMemory.AvailableMemory)"; }
 				$ScriptInformation += @{ Data = "Total max memory"; Value = "$($XSHostMemory.TotalMaxMemory)"; }
 			}
@@ -7139,10 +7139,13 @@ Function OutputHostUpdates
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Updates"
 	#$Updates = Get-XenHostPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | Select-Object name_label, version | Sort-Object name_label
-	$Updates = Get-XenHostPatch | `
-	Where-Object {(Get-XenHost -ref $_.host.opaque_ref).hostname -eq $XSHost.hostname} | `
-	Select-Object name_label, version | `
-	Sort-Object name_label
+	#$Updates = Get-XenHostPatch | `
+	#Where-Object {(Get-XenHost -ref $_.host.opaque_ref).hostname -eq $XSHost.hostname} | `
+	#Select-Object name_label, version | `
+	#Sort-Object name_label
+	
+	$HostUpdates = $XSHost.updates 
+	$HostUpdates = $HostUpdates | Sort-Object opaque_ref
 	
 	If ($MSWord -or $PDF)
 	{
@@ -7150,10 +7153,11 @@ Function OutputHostUpdates
 		
 		WriteWordLine 3 0 "Updates" 
 		
-		ForEach ($tmp in $Updates)
+		ForEach ($HostUpdate in $HostUpdates)
 		{
+			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
 			$WordTableRowHash = @{ 
-				Update = "$($tmp.name_label) (version $($tmp.version))";
+				Update = "$($Update.name_label) (version $($Update.version))";
 			}
 			$WordTable += $WordTableRowHash;
 		}
@@ -7177,9 +7181,10 @@ Function OutputHostUpdates
 	{
 		Line 1 "Updates"
 		Line 2 "Applied`t: " ""
-		ForEach ($tmp in $Updates)
+		ForEach ($HostUpdate in $HostUpdates)
 		{
-			Line 3 "" "$($tmp.name_label) (version $($tmp.version))"
+			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
+			Line 3 "" "$($Update.name_label) (version $($Update.version))"
 		}
 
 		Line 0 ""
@@ -7189,10 +7194,11 @@ Function OutputHostUpdates
 		WriteHTMLLine 3 0 "Updates"
 		$rowdata = @()
 
-		ForEach ($tmp in $Updates)
+		ForEach ($HostUpdate in $HostUpdates)
 		{
+			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
 			$rowdata += @(, (
-					"$($tmp.name_label) (version $($tmp.version))", $htmlwhite))
+					"$($Update.name_label) (version $($Update.version))", $htmlwhite))
 		}
 		
 		$columnHeaders = @(
@@ -8364,41 +8370,49 @@ Function OutputHostGPUProperties
 		WriteHTMLLine 3 0 "GPU"
 	}
 
+	<#
+		From the XenServer team:
+		
+		XC finds the host pgpu for which is_system_display_device=true
+		then checks this pgpu's dom0_access
+		
+		the server is using integrated gpu if both Host.display and the above dom0_access 
+		have value enabled or disable_on_reboot (note that despite the same name the values are of different type)
+		
+		the server will use integrated gpu on next reboot if both Host.display and the above dom0_access have value enabled or enable_on_reboot.
+	#>
+	
 	$HostGPU = $XSHost.PGPUs | Get-XenPGPU
+	
+	If($XSHost.display.ToString() -eq "enabled" -and $HostGPU.dom0_access.ToString() -eq "enabled")
+	{
+		$HostGPUTxt = "This server is currently using the integrated GPU"
+	}
+	ElseIf($XSHost.display.ToString() -eq "disable_on_reboot" -and $HostGPU.dom0_access.ToString() -eq "disable_on_reboot")
+	{
+		$HostGPUTxt = "This server is currently using the integrated GPUntil the next reboot"
+	}
+	ElseIf($XSHost.display.ToString() -eq "disabled" -and $HostGPU.dom0_access.ToString() -eq "disabled")
+	{
+		$HostGPUTxt = "This server is currently not using the integrated GPU"
+	}
+	Else
+	{
+		$HostGPUTxt = "Unable to determine the host's GPU setting. Host.Display: $($XSHost.display.ToString()) - HostGPU.dom0_access: $($HostGPU.dom0_access.ToString())"
+	}
 	
 	If ($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		If($HostGPU.is_system_display_device)
-		{
-			$ScriptInformation += @{ Data = "This server is currently using the integrated GPU"; Value = ""; }
-		}
-		Else
-		{
-			$ScriptInformation += @{ Data = "This server is currently not using the integrated GPU"; Value = ""; }
-		}
+		$ScriptInformation += @{ Data = $HostGPUTxt; Value = ""; }
 	}
 	If ($Text)
 	{
-		If($HostGPU.is_system_display_device)
-		{
-			Line 3 "This server is currently using the integrated GPU"
-		}
-		Else
-		{
-			Line 3 "This server is currently not using the integrated GPU"
-		}
+		Line 3 $HostGPUTxt
 	}
 	If ($HTML)
 	{
-		If($HostGPU.is_system_display_device)
-		{
-			$columnHeaders = @("This server is currently using the integrated GPU", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
-		}
-		Else
-		{
-			$columnHeaders = @("This server is currently not using the integrated GPU", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
-		}
+		$columnHeaders = @($HostGPUTxt, ($htmlsilver -bor $htmlbold), "", $htmlwhite)
 		$rowdata = @()
 	}
 
@@ -8474,7 +8488,7 @@ Function OutputHostMemory
 		$ScriptInformation += @{ Data = "VMs"; Value = "$($XSHostMemory.VMs)"; }
 		$XSHostMemory.VMTexts | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
 		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
-		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($iXSHostMemorytem.ControlDomainMemory)"; }
+		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($XSHostMemory.ControlDomainMemory)"; }
 		$ScriptInformation += @{ Data = "Available memory"; Value = "$($XSHostMemory.AvailableMemory)"; }
 		$ScriptInformation += @{ Data = "Total max memory"; Value = "$($XSHostMemory.TotalMaxMemory)"; }
 	}
