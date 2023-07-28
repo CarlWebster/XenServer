@@ -463,7 +463,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.020
+	VERSION: 0.021
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
 	LASTEDIT: July 28, 2023
 #>
@@ -588,6 +588,9 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.021
+#	Updated Function OutputHostGPUProperties with code from the XS team (Webster)
 #
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
@@ -8384,21 +8387,31 @@ Function OutputHostGPUProperties
 	
 	$HostGPU = $XSHost.PGPUs | Get-XenPGPU
 	
-	If($XSHost.display.ToString() -eq "enabled" -and $HostGPU.dom0_access.ToString() -eq "enabled")
+	<#
+		This code is from the XenServer team
+	#>
+	If(
+		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::disable_on_reboot) ) -and
+		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::disable_on_reboot) )
+	  )
 	{
 		$HostGPUTxt = "This server is currently using the integrated GPU"
 	}
-	ElseIf($XSHost.display.ToString() -eq "disable_on_reboot" -and $HostGPU.dom0_access.ToString() -eq "disable_on_reboot")
-	{
-		$HostGPUTxt = "This server is currently using the integrated GPUntil the next reboot"
-	}
-	ElseIf($XSHost.display.ToString() -eq "disabled" -and $HostGPU.dom0_access.ToString() -eq "disabled")
+	Else
 	{
 		$HostGPUTxt = "This server is currently not using the integrated GPU"
 	}
+
+	If(
+		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::enable_on_reboot) ) -and
+		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enable_on_reboot) )
+	  )
+	{
+		$HostGPUTxt = "This server will use the integrated GPU on next reboot"
+	}
 	Else
 	{
-		$HostGPUTxt = "Unable to determine the host's GPU setting. Host.Display: $($XSHost.display.ToString()) - HostGPU.dom0_access: $($HostGPU.dom0_access.ToString())"
+		$HostGPUTxt = "This server will not use the integrated GPU on next reboot"
 	}
 	
 	If ($MSWord -or $PDF)
