@@ -1,6 +1,6 @@
 # XenServer
 
-What? Another XenServer Documentation script attempt? I thought you were retiring on July 1st?
+What? Another XenServer Documentation script attempt? I thought you were retiring on July 1st.
 
 In a "vigorous" discussion with the keeper of the Citrix SDK docs on GitHub, I ended the conversation with, "Don't even get me started on the horrible, terrible, not-good XenServer PowerShell implementation!!!!!!".
 
@@ -512,7 +512,7 @@ NOTES
         NAME: XS_Inventory.ps1
         VERSION: 0.020
         AUTHOR: Carl Webster and John Billekens, along with help from Michael B. Smith, Guy Leech, and the XenServer team
-        LASTEDIT: July 27, 2023
+        LASTEDIT: July 28, 2023
 
     -------------------------- EXAMPLE 1 --------------------------
 
