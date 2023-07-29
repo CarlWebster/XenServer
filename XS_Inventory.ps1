@@ -591,7 +591,21 @@ Param(
 #
 #.021
 #	Updated Function OutputHostGPUProperties with code from the XS team (Webster)
-#
+#	Before when Pool section was skipped, certain data was not collected.
+#   These functions will run seperate when Pool is skipped to make sure the other sections get the required data. (JohnB)
+#       GatherXSPoolMemoryData
+#       GatherXSPoolStorageData
+#       GatherXSPoolNsetworkingData
+#   Changed the following functions with the previous created functions and data, 
+#   and changed the output to be more aligned to XenCenter (JohnB)
+#       OutputPoolNetworking
+#       OutputPoolStorage
+#       OutputPoolMemory
+#       OutputHostNetworking
+#       OutputHostStorage
+#       OutputHostMemory
+#   Changed the OutputHostUpdates functions, sorting on update name (JohnB)
+
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
 #		This function is for what you see when looking at Server General Properties, not a host's Properties, General
@@ -851,7 +865,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.020'
+$script:MyVersion = '0.021'
 $Script:ScriptName = "XS_Inventory.ps1"
 $tmpdate = [datetime] "07/28/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
@@ -4180,13 +4194,15 @@ Function ProcessScriptSetup
 	$tmptext = "Virtual Machines"
 	$tmp = 'true'
 	$strkey = 'HideFromXenCenter'
-	$Script:VMNames = Get-XenVM -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 | `
+	$Script:XSAllVMs = Get-XenVM -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0
+	$Script:XSVMs = $Script:XSAllVMs | `
 			Where-Object { !$_.is_a_template -and `
 				!$_.is_a_snapshot -and `
 				!$_.is_control_domain -and `
-				!$_.other_config.TryGetValue($strkey, [ref]$tmp) } | `
-			Select-Object name_label | `
-			Sort-Object name_label	
+				!$_.is_default_template -and `
+				!$_.is_snapshot_from_vmpp -and `
+				!$_.other_config.TryGetValue($strkey, [ref]$tmp) } | Sort-Object name_label
+	$Script:VMNames = $Script:XSVMs | Select-Object name_label	
 	If ($? -and $Null -ne $Script:VMNames)
 	{
 		#success
@@ -4421,6 +4437,231 @@ function Convert-SizeToString
 	}
 
 	return $result
+}
+
+Function GatherXSPoolMemoryData
+{
+	Write-Verbose "$(Get-Date -Format G): `t Gathering Memory Data"
+	$XSPoolMemories = @()
+	foreach ($XSHost in $Script:XSHosts)
+	{
+		$XSHostName = $XSHost.name_label
+		$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
+		$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
+		$memFree = Convert-SizeToString -size $XSHostMetrics.memory_free -Decimal 1
+		$memoryText = "$memFree RAM available ($memTotal)"
+		$hostVMs = @(GetXenVMsOnHost $XSHost)
+		$hostRunningVMs = @($hostVMs | Where-Object { $_.power_state -like "running" })
+		$dom0VM = GetXenVMsOnHost -XSHost $XSHost -ControlDomain
+		$vmData = @()
+		$vmMemoryUsed = [Int64]0
+		ForEach ($vm in $hostVMs)
+		{
+			if ($vm.power_state -like "running") 
+			{
+				$powerState = "On"
+				$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
+			}
+			Else
+			{
+				$powerState = "Off"
+			}
+			$vmData += [PSCustomObject]@{
+				VMText       = $('{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1))
+				VMName       = $vm.name_label
+				VMPowerState = $powerState
+				VMMemoryMin  = ""
+				VMMemoryMax  = ""
+				VMMemory     = $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
+			}
+		}
+		$vmData = $vmData | Sort-Object -Property VMName
+		$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
+		$memXS = Convert-SizeToString -size $memXSNum -Decimal 1
+		$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
+		$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
+		$memXSUsed = Convert-SizeToString -size $memXSUsedNum -Decimal 1
+		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
+		$memXSAvailable = Convert-SizeToString -size $memXSAvailableNum -Decimal 1
+		$cdMemory = Convert-SizeToString -size $dom0VM.memory_target -Decimal 1
+
+
+		$XSPoolMemories += "" | Select-Object -Property `
+		@{Name = 'XSHostName'; Expression = { $XSHostName } },
+		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
+		@{Name = 'Server'; Expression = { $memoryText } },
+		@{Name = 'TotalMemory'; Expression = { $memTotal } },
+		@{Name = 'CurrentlyUsed'; Expression = { $memXSUsed } },
+		@{Name = 'ControlDomainMemory'; Expression = { $cdMemory } },
+		@{Name = 'AvailableMemory'; Expression = { $memXSAvailable } },
+		@{Name = 'TotalMaxMemory'; Expression = { "$($memXSUsed) ($memXSUsedPct of total memory)" } },
+		@{Name = 'VMs'; Expression = { $hostRunningVMs.Count } },
+		@{Name = 'VMData'; Expression = { $vmData } },
+		@{Name = 'XenServerMemory'; Expression = { $memXS } }
+	}
+	$Script:XSPoolMemories = $XSPoolMemories | Sort-Object -Property XSHostName
+
+}
+
+Function GatherXSPoolStorageData
+{
+	Write-Verbose "$(Get-Date -Format G): `t Gather Storage Data"
+	$pbds = Get-XenPBD | Where-Object { $_.host.opaque_ref -in $Script:XSHosts.opaque_ref }
+
+	$XSPoolStorages = @()
+	ForEach ($item in $pbds)
+	{
+		$XSHost = $Script:XSHosts | Where-Object { $_.opaque_ref -like $item.host.opaque_ref }
+		$XSHostName = $XSHost.name_label
+		$sr = $item.SR | Get-XenSR -EA 0
+		If ([String]::IsNullOrEmpty($($sr.name_description))) 
+		{
+			$description = '{0} on {1}' -f $sr.name_label, $XSHostName
+		}
+		Else
+		{
+			$description = $($sr.name_description)
+		}
+		If ($sr.shared -like $true)
+		{
+			$shared = "yes"
+		}
+		Else
+		{
+			$shared = "no"
+		}
+		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
+		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
+		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
+		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
+		{
+			$usage = '0% (0 B)'
+		}
+		Else
+		{
+			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
+		}
+		$XSPoolStorages += $sr | Select-Object -Property `
+		@{Name = 'XSHostName'; Expression = { $XSHostName } },
+		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
+		@{Name = 'Name'; Expression = { $_.name_label } },
+		@{Name = 'Description'; Expression = { $description } },
+		@{Name = 'Type'; Expression = { $_.type } },
+		@{Name = 'Shared'; Expression = { $shared } },
+		@{Name = 'Usage'; Expression = { $usage } },
+		@{Name = 'Size'; Expression = { $size } },
+		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } }
+	}
+	$Script:XSPoolStorages = @($XSPoolStorages | Sort-Object -Property XSHostName, Name)
+}
+
+Function GatherXSPoolNsetworkingData
+{
+	Write-Verbose "$(Get-Date -Format G): `t Gathering Networking data"
+	$networks = @(Get-XenNetwork -EA 0 | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
+	$XSNetworks = @()
+	$nrNetworks = $networks.Count
+	If ($nrNetworks -ge 1)
+	{
+		ForEach ($Item in $networks)
+		{
+			ForEach ($XSHost in $Script:XSHosts)
+			{
+				$pif = $Item.PIFs | Get-XenPIF -EA 0 | Where-Object { $XSHost.opaque_ref -in $_.host }
+				if ([String]::IsNullOrEmpty($pif))
+				{
+					$nic = ""
+					$vlan = ""
+					$autoAssign = "No"
+					$linkStatus = "<None>"
+					$mac = "-"
+				}
+				else
+				{
+					$nic = $pif.device.Replace("eth", "NIC ")
+					
+					If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
+					{
+						$vlan = "-"
+						$mac = $pif.MAC
+					}
+					Else
+					{
+						$vlan = "$($pif.VLAN)"
+						$mac = "-"
+					}
+					if ($Item.other_config["automatic"] -like $true)
+					{
+						$autoAssign = "Yes"
+					}
+					else
+					{
+						$autoAssign = "No"
+					}
+					
+					$pifMetrics = $pif.metrics | Get-XenPIFMetrics
+					if ($pifMetrics.carrier -like $true)
+					{
+						$linkStatus = "Connected"
+					}
+					else
+					{
+						$linkStatus = "Disconnected"
+					}
+				}
+				if (($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref))
+				{
+					$hostIsPoolMaster = $true
+				}
+				else
+				{
+					$hostIsPoolMaster = $false
+				}
+				$XSNetworks += $Item | Select-Object -Property `
+				@{Name = 'XSHostname'; Expression = { $XSHost.name_label } },
+				@{Name = 'XSHostref'; Expression = { $XSHost.opaque_ref } },
+				@{Name = 'XSHostPoolMaster'; Expression = { $hostIsPoolMaster } },
+				@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
+				@{Name = 'Description'; Expression = { $_.name_description } },
+				@{Name = 'NIC'; Expression = { $nic } },
+				@{Name = 'VLAN'; Expression = { $vlan } },
+				@{Name = 'Auto'; Expression = { $autoAssign } },
+				@{Name = 'LinkStatus'; Expression = { $linkStatus } },
+				@{Name = 'MAC'; Expression = { $mac } },
+				@{Name = 'MTU'; Expression = { $item.MTU } },
+				@{Name = 'SRIOV'; Expression = { "" } }
+			}
+		}
+	}
+	$Script:XSPoolNetworks = @($XSNetworks | Sort-Object -Property XSHostname, Name)
+}
+
+Function GetXenVMsOnHost
+{
+	Param(
+		[object]$XSHost,
+
+		[Switch]$ControlDomain
+	)
+	$XSVMs = $Script:XSAllVMs | Where-Object { `
+		$_.affinity.opaque_ref -like $XSHost.opaque_ref -or `
+		$_.resident_on.opaque_ref -like $XSHost.opaque_ref -or `
+		$_.scheduled_to_be_resident_on.opaque_ref -like $XSHost.opaque_ref
+	}
+	if ($ControlDomain) {
+		$XSVMs = $XSVMs | Where-Object { $_.is_control_domain -like $true }
+	} else {
+		$tmp = 'true'
+		$strkey = 'HideFromXenCenter'
+	    $XSVMs = $XSVMs | Where-Object { `
+			!$_.is_a_template -and `
+			!$_.is_a_snapshot -and `
+			!$_.is_control_domain -and `
+			!$_.is_default_template -and `
+			!$_.is_snapshot_from_vmpp -and `
+			!$_.other_config.TryGetValue($strkey, [ref]$tmp) }
+	}
+	return $XSVMs
 }
 
 #endregion Functions
@@ -5737,49 +5978,7 @@ Function OutputPoolClustering
 Function OutputPoolMemory
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Memory"
-	Write-Verbose "$(Get-Date -Format G): `t Pool Storage Gathering data"
-
-	$XSPoolMemories = @()
-	foreach ($XSHost in $Script:XSHosts)
-	{
-		$XSHostName = $XSHost.name_label
-		$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
-		$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
-		$memFree = Convert-SizeToString -size $XSHostMetrics.memory_free -Decimal 1
-		$memoryText = "$memFree RAM available ($memTotal)"
-		$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM | Sort-Object -Property name_label)
-		$hostRunningVMs = @($hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $false -and $_.power_state -like "running" })
-		$dom0VM = $hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $true }
-		$vmText = @()
-		$vmMemoryUsed = [Int64]0
-		ForEach ($vm in $hostRunningVMs)
-		{
-			$vmText += '{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
-			$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
-		}
-	
-		$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
-		$memXS = Convert-SizeToString -size $memXSNum -Decimal 1
-		$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
-		$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
-		$memXSUsed = Convert-SizeToString -size $memXSUsedNum -Decimal 1
-		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
-		$memXSAvailable = Convert-SizeToString -size $memXSAvailableNum -Decimal 1
-		$cdMemory = Convert-SizeToString -size $dom0VM.memory_target -Decimal 1
-
-
-		$XSPoolMemories += "" | Select-Object -Property `
-		@{Name = 'XSHostName'; Expression = { $XSHostName } },
-		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
-		@{Name = 'Server'; Expression = { $memoryText } },
-		@{Name = 'VMs'; Expression = { $hostRunningVMs.Count } },
-		@{Name = 'VMTexts'; Expression = { $vmText } },
-		@{Name = 'XenServerMemory'; Expression = { $memXS } },
-		@{Name = 'ControlDomainMemory'; Expression = { $cdMemory } },
-		@{Name = 'AvailableMemory'; Expression = { $memXSAvailable } },
-		@{Name = 'TotalMaxMemory'; Expression = { "$($memXSUsed) ($memXSUsedPct of total memory)" } }
-	}
-	$Script:XSPoolMemories = $XSPoolMemories | Sort-Object -Property XSHostName
+	GatherXSPoolMemoryData
 
 	if ($NoPoolMemory -eq $false)
 	{
@@ -5817,10 +6016,8 @@ Function OutputPoolMemory
 			If ($MSWord -or $PDF)
 			{
 				$ScriptInformation += @{ Data = "Host"; Value = "$($XSHostMemory.XSHostName)"; }
-				$ScriptInformation += @{ Data = "Server"; Value = "$($XSHostMemory.Server)"; }
-				$ScriptInformation += @{ Data = "VMs"; Value = "$($XSHostMemory.VMs)"; }
-				$XSHostMemory.VMTexts | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
-				$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
+				$ScriptInformation += @{ Data = "Total Memory"; Value = "$($XSHostMemory.TotalMemory)"; }
+				$ScriptInformation += @{ Data = "Currently used"; Value = "$($XSHostMemory.CurrentlyUsed)"; }
 				$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($XSHostMemory.ControlDomainMemory)"; }
 				$ScriptInformation += @{ Data = "Available memory"; Value = "$($XSHostMemory.AvailableMemory)"; }
 				$ScriptInformation += @{ Data = "Total max memory"; Value = "$($XSHostMemory.TotalMaxMemory)"; }
@@ -5828,10 +6025,8 @@ Function OutputPoolMemory
 			If ($Text)
 			{
 				Line 3 "Host`t`t`t: " "$($XSHostMemory.XSHostName)"
-				Line 3 "Server`t`t`t: " "$($XSHostMemory.Server)"
-				Line 3 "VMs`t`t`t: " "$($XSHostMemory.VMs)"
-				$XSHostMemory.VMTexts | ForEach-Object { Line 6 "  $($_)" }
-				Line 3 "Citrix Hypervisor`t: " "$($XSHostMemory.XenServerMemory)"
+				Line 3 "Total Memory`t`t: " "$($XSHostMemory.TotalMemory)"
+				Line 3 "Currently used`t`t: " "$($XSHostMemory.CurrentlyUsed)"
 				Line 3 "Control domain memory`t: " "$($XSHostMemory.ControlDomainMemory)"
 				Line 3 "Available memory`t: " "$($XSHostMemory.AvailableMemory)"
 				Line 3 "Total max memory`t: " "$($XSHostMemory.TotalMaxMemory)"
@@ -5839,10 +6034,8 @@ Function OutputPoolMemory
 			If ($HTML)
 			{
 				$columnHeaders = @("Host", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XSHostName)", ($htmlsilver -bor $htmlbold))
-				$rowdata +=  @(, ("Server", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.Server)", $htmlwhite))
-				$rowdata += @(, ("VMs", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.VMs)", $htmlwhite))
-				$XSHostMemory.VMTexts | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_)", $htmlwhite)) }
-				$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XenServerMemory)", $htmlwhite))
+				$rowdata += @(, ("Total Memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMemory)", $htmlwhite))
+				$rowdata += @(, ("Currently used", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.CurrentlyUsed)", $htmlwhite))
 				$rowdata += @(, ("Control domain memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.ControlDomainMemory)", $htmlwhite))
 				$rowdata += @(, ("Available memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.AvailableMemory)", $htmlwhite))
 				$rowdata += @(, ("Total max memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMaxMemory)", $htmlwhite))
@@ -5890,57 +6083,9 @@ Function OutputPoolMemory
 Function OutputPoolStorage
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Storage"
-	
-	Write-Verbose "$(Get-Date -Format G): `t Pool Storage Gathering data"
-	$pbds = Get-XenPBD | Where-Object { $_.host.opaque_ref -in $Script:XSHosts.opaque_ref }
+	GatherXSPoolStorageData
 
-	$XSPoolStorages = @()
-	ForEach ($item in $pbds)
-	{
-		$XSHost = $Script:XSHosts | Where-Object { $_.opaque_ref -like $item.host.opaque_ref }
-		$XSHostName = $XSHost.name_label
-		$sr = $item.SR | Get-XenSR -EA 0
-		If ([String]::IsNullOrEmpty($($sr.name_description))) 
-		{
-			$description = '{0} on {1}' -f $sr.name_label, $XSHostName
-		}
-		Else
-		{
-			$description = $($sr.name_description)
-		}
-		If ($sr.shared -like $true)
-		{
-			$shared = "yes"
-		}
-		Else
-		{
-			$shared = "no"
-		}
-		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
-		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
-		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
-		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
-		{
-			$usage = '0% (0 B)'
-		}
-		Else
-		{
-			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
-		}
-		$XSPoolStorages += $sr | Select-Object -Property `
-		@{Name = 'XSHostName'; Expression = { $XSHostName } },
-		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
-		@{Name = 'Name'; Expression = { $_.name_label } },
-		@{Name = 'Description'; Expression = { $description } },
-		@{Name = 'Type'; Expression = { $_.type } },
-		@{Name = 'Shared'; Expression = { $shared } },
-		@{Name = 'Usage'; Expression = { $usage } },
-		@{Name = 'Size'; Expression = { $size } },
-		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } }
-	}
-	$XSPoolStorages = @($XSPoolStorages | Sort-Object -Property XSHostName, Name)
-	$storageCount = $XSPoolStorages.Count
-	$Script:XSPoolStorages = $XSPoolStorages
+	$storageCount = $Script:XSPoolStorages.Count
 
 	if ($NoPoolStorage -eq $false) 
 	{
@@ -5994,7 +6139,7 @@ Function OutputPoolStorage
 				$rowdata = @()
 			}
 
-			ForEach ($Item in $XSPoolStorages)
+			ForEach ($Item in $Script:XSPoolStorages)
 			{
 				If ($MSWord -or $PDF)
 				{
@@ -6071,84 +6216,8 @@ Function OutputPoolStorage
 Function OutputPoolNetworking
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Networking"
-	Write-Verbose "$(Get-Date -Format G): `t Gathering Networking data"
-	$networks = @(Get-XenNetwork -EA 0 | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
-	$XSNetworks = @()
-	$nrNetworks = $networks.Count
-	If ($nrNetworks -ge 1)
-	{
-		ForEach ($Item in $networks)
-		{
-			ForEach ($XSHost in $Script:XSHosts)
-               {
-				$pif = $Item.PIFs | Get-XenPIF -EA 0 | Where-Object { $XSHost.opaque_ref -in $_.host }
-				if ([String]::IsNullOrEmpty($pif))
-				{
-					$nic = ""
-					$vlan = ""
-					$autoAssign = "No"
-					$linkStatus = "<None>"
-					$mac = "-"
-				}
-				else
-				{
-					$nic = $pif.device.Replace("eth", "NIC ")
-					
-					If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
-					{
-						$vlan = "-"
-						$mac = $pif.MAC
-					}
-					Else
-					{
-						$vlan = "$($pif.VLAN)"
-						$mac = "-"
-					}
-					if ($Item.other_config["automatic"] -like $true)
-					{
-						$autoAssign = "Yes"
-					}
-					else
-					{
-						$autoAssign = "No"
-					}
-					
-					$pifMetrics = $pif.metrics | Get-XenPIFMetrics
-					if ($pifMetrics.carrier -like $true)
-					{
-						$linkStatus = "Connected"
-					}
-					else
-					{
-						$linkStatus = "Disconnected"
-					}
-				}
-				if (($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref))
-				{
-					$hostIsPoolMaster = $true
-				}
-				else
-				{
-					$hostIsPoolMaster = $false
-				}
-				$XSNetworks += $Item | Select-Object -Property `
-				@{Name = 'XSHostname'; Expression = { $XSHost.name_label } },
-				@{Name = 'XSHostref'; Expression = { $XSHost.opaque_ref } },
-				@{Name = 'XSHostPoolMaster'; Expression = { $hostIsPoolMaster } },
-				@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
-				@{Name = 'Description'; Expression = { $_.name_description } },
-				@{Name = 'NIC'; Expression = { $nic } },
-				@{Name = 'VLAN'; Expression = { $vlan } },
-				@{Name = 'Auto'; Expression = { $autoAssign } },
-				@{Name = 'LinkStatus'; Expression = { $linkStatus } },
-				@{Name = 'MAC'; Expression = { $mac } },
-				@{Name = 'MTU'; Expression = { $item.MTU } },
-				@{Name = 'SRIOV'; Expression = { "" } }
-			}
-		}
-	}
-	$XSNetworks = @($XSNetworks | Sort-Object -Property XSHostname, Name)
-	$Script:XSPoolNetworks = $XSNetworks
+	GatherXSPoolNsetworkingData
+	$XSNetworks = $Script:XSPoolNetworks
 	#Choose to use Pool Master data as original XenCenter pool data is more or less "random"
 	if ($NoPoolNetworking -eq $false) 
 	{
@@ -6277,7 +6346,9 @@ Function OutputPoolNetworking
 				WriteHTMLLine 0 0 ""
 			}
 		}
-	} else {
+	}
+ else
+	{
 		Write-Verbose "$(Get-Date -Format G): `t Pool Networking skipped"
 	}
 }
@@ -7147,8 +7218,9 @@ Function OutputHostUpdates
 	#Select-Object name_label, version | `
 	#Sort-Object name_label
 	
-	$HostUpdates = $XSHost.updates 
-	$HostUpdates = $HostUpdates | Sort-Object opaque_ref
+	#$HostUpdates = $XSHost.updates 
+	$HostUpdates = $XSHost.updates | Get-XenPoolUpdate -EA 0 | Sort-Object name_label
+	#$HostUpdates = $HostUpdates | Sort-Object opaque_ref
 	
 	If ($MSWord -or $PDF)
 	{
@@ -7156,9 +7228,10 @@ Function OutputHostUpdates
 		
 		WriteWordLine 3 0 "Updates" 
 		
-		ForEach ($HostUpdate in $HostUpdates)
+		#ForEach ($HostUpdate in $HostUpdates)
+		ForEach ($Update in $HostUpdates)
 		{
-			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
+			#$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
 			$WordTableRowHash = @{ 
 				Update = "$($Update.name_label) (version $($Update.version))";
 			}
@@ -7184,9 +7257,10 @@ Function OutputHostUpdates
 	{
 		Line 1 "Updates"
 		Line 2 "Applied`t: " ""
-		ForEach ($HostUpdate in $HostUpdates)
+		#ForEach ($HostUpdate in $HostUpdates)
+		ForEach ($Update in $HostUpdates)
 		{
-			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
+			#$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
 			Line 3 "" "$($Update.name_label) (version $($Update.version))"
 		}
 
@@ -7197,9 +7271,10 @@ Function OutputHostUpdates
 		WriteHTMLLine 3 0 "Updates"
 		$rowdata = @()
 
-		ForEach ($HostUpdate in $HostUpdates)
+		#ForEach ($HostUpdate in $HostUpdates)
+		ForEach ($Update in $HostUpdates)
 		{
-			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
+			#$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
 			$rowdata += @(, (
 					"$($Update.name_label) (version $($Update.version))", $htmlwhite))
 		}
@@ -7316,30 +7391,7 @@ Function OutputHostMemoryOverview
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Memory Overview"
 
-	$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
-	$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
-	$memFree = Convert-SizeToString -size $XSHostMetrics.memory_free -Decimal 1
-	$memoryText = "$memFree RAM available ($memTotal)"
-	$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM | Sort-Object -Property name_label)
-	$hostRunningVMs = @($hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $false -and $_.power_state -like "running" })
-	$dom0VM = $hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $true }
-	$vmText = @()
-	$vmMemoryUsed = [Int64]0
-	ForEach ($vm in $hostRunningVMs)
-	{
-		$vmText += '{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
-		$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
-	}
-
-	$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
-	$memXS = Convert-SizeToString -size $memXSNum -Decimal 1
-	$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
-	$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
-	$memXSUsed = Convert-SizeToString -size $memXSUsedNum -Decimal 1
-	$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
-	$memXSAvailable = Convert-SizeToString -size $memXSAvailableNum -Decimal 1
-	$cdMemory = Convert-SizeToString -size $dom0VM.memory_target -Decimal 1
-
+	$XSHostMemory = @($Script:XSPoolMemories | Where-Object { $_.XSHostRef -like $XSHost.opaque_ref } )
 
 	If ($MSWord -or $PDF)
 	{
@@ -7367,35 +7419,27 @@ Function OutputHostMemoryOverview
 		$rowdata = @()
 	}
 	
+	$hostRunningVMs = @($XSHostMemory.VMData | Where-Object { $_.VMPowerState -eq "On" })
 	If ($MSWord -or $PDF)
 	{
-		$ScriptInformation += @{ Data = "Server"; Value = "$($memoryText)"; }
+		$ScriptInformation += @{ Data = "Server"; Value = "$($XSHostMemory.Server)"; }
 		$ScriptInformation += @{ Data = "VMs"; Value = "$($hostRunningVMs.Count)"; }
-		$vmText | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
-		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($memXS)"; }
-		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($cdMemory)"; }
-		$ScriptInformation += @{ Data = "Available memory"; Value = "$($memXSAvailable)"; }
-		$ScriptInformation += @{ Data = "Total max memory"; Value = "$($memXSUsed) ($memXSUsedPct of total memory)"; }
+		$hostRunningVMs | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_.VMText)"; } }
+		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
 	}
 	If ($Text)
 	{
-		Line 3 "Server`t`t`t: " "$($memoryText)"
+		Line 3 "Server`t`t`t: " "$($XSHostMemory.Server)"
 		Line 3 "VMs`t`t`t: " "$($hostRunningVMs.Count)"
-		$vmText | ForEach-Object { Line 6 "  $($_)" }
-		Line 3 "Citrix Hypervisor`t: " "$($memXS)"
-		Line 3 "Control domain memory`t: " "$($cdMemory)"
-		Line 3 "Available memory`t: " "$($memXSAvailable)"
-		Line 3 "Total max memory`t: " "$($memXSUsed) ($memXSUsedPct of total memory)"
+		$hostRunningVMs | ForEach-Object { Line 6 "  $($_.VMText)" }
+		Line 3 "Citrix Hypervisor`t: " "$($XSHostMemory.XenServerMemory)"
 	}
 	If ($HTML)
 	{
-		$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($memoryText)", $htmlwhite)
+		$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.Server)", $htmlwhite)
 		$rowdata += @(, ("VMs", ($htmlsilver -bor $htmlbold), "$($hostRunningVMs.Count)", $htmlwhite))
-		$vmText | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_)", $htmlwhite)) }
-		$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($memXS)", $htmlwhite))
-		$rowdata += @(, ("Control domain memory", ($htmlsilver -bor $htmlbold), "$($cdMemory)", $htmlwhite))
-		$rowdata += @(, ("Available memory", ($htmlsilver -bor $htmlbold), "$($memXSAvailable)", $htmlwhite))
-		$rowdata += @(, ("Total max memory", ($htmlsilver -bor $htmlbold), "$($memXSUsed) ($memXSUsedPct of total memory)", $htmlwhite))
+		$hostRunningVMs | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_.VMText)", $htmlwhite)) }
+		$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XenServerMemory)", $htmlwhite))
 	}
 	If ($MSWord -or $PDF)
 	{
@@ -8390,10 +8434,10 @@ Function OutputHostGPUProperties
 	<#
 		This code is from the XenServer team
 	#>
-	If(
+	If (
 		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::disable_on_reboot) ) -and
 		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::disable_on_reboot) )
-	  )
+	)
 	{
 		$HostGPUTxt = "This server is currently using the integrated GPU"
 	}
@@ -8402,10 +8446,10 @@ Function OutputHostGPUProperties
 		$HostGPUTxt = "This server is currently not using the integrated GPU"
 	}
 
-	If(
+	If (
 		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::enable_on_reboot) ) -and
 		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enable_on_reboot) )
-	  )
+	)
 	{
 		$HostGPUTxt = "This server will use the integrated GPU on next reboot"
 	}
@@ -8434,8 +8478,8 @@ Function OutputHostGPUProperties
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 			-Columns Data, Value `
 			-List `
-			-Format $wdTableGrid `
-			-AutoFit $wdAutoFitFixed;
+			-Format $wdTableGrid `htmlbold
+		-AutoFit $wdAutoFitFixed;
 
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
@@ -8497,30 +8541,24 @@ Function OutputHostMemory
 	
 	If ($MSWord -or $PDF)
 	{
-		$ScriptInformation += @{ Data = "Server"; Value = "$($XSHostMemory.Server)"; }
-		$ScriptInformation += @{ Data = "VMs"; Value = "$($XSHostMemory.VMs)"; }
-		$XSHostMemory.VMTexts | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
-		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
-		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($XSHostMemory.ControlDomainMemory)"; }
+		$ScriptInformation += @{ Data = "Total Memory"; Value = "$($XSHostMemory.TotalMemory)"; }
+		$ScriptInformation += @{ Data = "Currently used"; Value = "$($XSHostMemory.CurrentlyUsed)"; }
+		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($iXSHostMemorytem.ControlDomainMemory)"; }
 		$ScriptInformation += @{ Data = "Available memory"; Value = "$($XSHostMemory.AvailableMemory)"; }
 		$ScriptInformation += @{ Data = "Total max memory"; Value = "$($XSHostMemory.TotalMaxMemory)"; }
 	}
 	If ($Text)
 	{
-		Line 3 "Server`t`t`t: " "$($XSHostMemory.Server)"
-		Line 3 "VMs`t`t`t: " "$($XSHostMemory.VMs)"
-		$XSHostMemory.VMTexts | ForEach-Object { Line 6 "  $($_)" }
-		Line 3 "Citrix Hypervisor`t: " "$($XSHostMemory.XenServerMemory)"
+		Line 3 "Total Memory`t`t: " "$($XSHostMemory.TotalMemory)"
+		Line 3 "Currently used`t`t: " "$($XSHostMemory.CurrentlyUsed)"
 		Line 3 "Control domain memory`t: " "$($XSHostMemory.ControlDomainMemory)"
 		Line 3 "Available memory`t: " "$($XSHostMemory.AvailableMemory)"
 		Line 3 "Total max memory`t: " "$($XSHostMemory.TotalMaxMemory)"
 	}
 	If ($HTML)
 	{
-		$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.Server)", $htmlwhite)
-		$rowdata += @(, ("VMs", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.VMs)", $htmlwhite))
-		$XSHostMemory.VMTexts | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_)", $htmlwhite)) }
-		$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XenServerMemory)", $htmlwhite))
+		$columnHeaders = @("Total Memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMemory)", $htmlwhite)
+		$rowdata += @(, ("Currently used", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.CurrentlyUsed)", $htmlwhite))
 		$rowdata += @(, ("Control domain memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.ControlDomainMemory)", $htmlwhite))
 		$rowdata += @(, ("Available memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.AvailableMemory)", $htmlwhite))
 		$rowdata += @(, ("Total max memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMaxMemory)", $htmlwhite))
@@ -8557,7 +8595,93 @@ Function OutputHostMemory
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
-		
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	
+	}
+	If ($Text)
+	{
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @( "", ($Script:htmlsb), "", ($Script:htmlsb)
+		)
+	}
+	foreach ($vm in @($XSHostMemory.VMData | Where-Object { $_.VMPowerState -eq "On" }))
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "VM Name"; Value = "$($vm.VMName)"; }
+			$ScriptInformation += @{ Data = "Power state"; Value = "$($vm.VMPowerState)"; }
+			$ScriptInformation += @{ Data = "Memory"; Value = "$($vm.VMMemory)"; }
+		}
+		If ($Text)
+		{
+			Line 3 "VM Name`t`t: " "$($vm.VMName)"
+			Line 3 "Power state`t: " "$($vm.VMPowerState)"
+			Line 3 "Memory`t`t: " "$($vm.VMMemory)"
+		}
+		If ($HTML)
+		{
+			$rowdata += @(, ("VM Name", ($htmlsilver -bor $htmlbold), "$($vm.VMName)", ($htmlsilver -bor $htmlbold)))
+			$rowdata += @(, ("Power state", ($htmlsilver -bor $htmlbold), "$($vm.VMPowerState)", $htmlwhite))
+			$rowdata += @(, ("Memory", ($htmlsilver -bor $htmlbold), "$($vm.VMMemory)", $htmlwhite))
+		}
+	}
+	foreach ($vm in @($XSHostMemory.VMData | Where-Object { $_.VMPowerState -eq "Off" }))
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "VM Name"; Value = "$($vm.VMName)"; }
+			$ScriptInformation += @{ Data = "Power state"; Value = "$($vm.VMPowerState)"; }
+			$ScriptInformation += @{ Data = "Memory"; Value = "$($vm.VMMemory)"; }
+		}
+		If ($Text)
+		{
+			Line 3 "VM Name`t`t: " "$($vm.VMName)"
+			Line 3 "Power state`t: " "$($vm.VMPowerState)"
+			Line 3 "Memory`t`t: " "$($vm.VMMemory)"
+		}
+		If ($HTML)
+		{
+			$rowdata += @(, ("VM Name", ($htmlsilver -bor $htmlbold), "$($vm.VMName)", ($htmlsilver -bor $htmlbold)))
+			$rowdata += @(, ("Power state", ($htmlsilver -bor $htmlbold), "$($vm.VMPowerState)", $htmlwhite))
+			$rowdata += @(, ("Memory", ($htmlsilver -bor $htmlbold), "$($vm.VMMemory)", $htmlwhite))
+		}
+	}
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+	
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+	
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 200;
+	
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+	
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "200")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}	
 }
 
 Function OutputHostStorage
@@ -10992,6 +11116,12 @@ Write-Verbose "$(Get-Date -Format G): Start writing report data"
 If (("Pool" -in $Section) -or ("All" -in $Section))
 {
 	ProcessPool
+}
+Else 
+{
+	GatherXSPoolMemoryData
+	GatherXSPoolStorageData
+	GatherXSPoolNsetworkingData
 }
 If (("Host" -in $Section) -or ("All" -in $Section))
 {
