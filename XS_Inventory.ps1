@@ -592,7 +592,7 @@ Param(
 #.021
 #	Updated Function OutputHostGPUProperties with code from the XS team (Webster)
 #	Before when Pool section was skipped, certain data was not collected.
-#   These functions will run seperate when Pool is skipped to make sure the other sections get the required data. (JohnB)
+#   These functions will run separate when Pool is skipped to make sure the other sections get the required data. (JohnB)
 #       GatherXSPoolMemoryData
 #       GatherXSPoolStorageData
 #       GatherXSPoolNsetworkingData
@@ -605,6 +605,7 @@ Param(
 #       OutputHostStorage
 #       OutputHostMemory
 #   Changed the OutputHostUpdates functions, sorting on update name (JohnB)
+#   Changed OutputHostAlerts & ProcessVMs to add GetXenVMsOnHost to reuse data and save speed (JohnB)
 
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
@@ -4641,25 +4642,37 @@ Function GetXenVMsOnHost
 	Param(
 		[object]$XSHost,
 
-		[Switch]$ControlDomain
+		[Switch]$ControlDomain,
+
+		[Switch]$OnAllHosts
 	)
-	$XSVMs = $Script:XSAllVMs | Where-Object { `
-		$_.affinity.opaque_ref -like $XSHost.opaque_ref -or `
-		$_.resident_on.opaque_ref -like $XSHost.opaque_ref -or `
-		$_.scheduled_to_be_resident_on.opaque_ref -like $XSHost.opaque_ref
+	If ($OnAllHosts) 
+	{
+		$XSVMs = $Script:XSAllVMs
 	}
-	if ($ControlDomain) {
-		$XSVMs = $XSVMs | Where-Object { $_.is_control_domain -like $true }
-	} else {
+	Else
+	{
+		$XSVMs = $Script:XSAllVMs | Where-Object { `
+				$_.affinity.opaque_ref -like $XSHost.opaque_ref -or `
+				$_.resident_on.opaque_ref -like $XSHost.opaque_ref -or `
+				$_.scheduled_to_be_resident_on.opaque_ref -like $XSHost.opaque_ref
+		}
+	}
+	if ($ControlDomain)
+	{
+		$XSVMs = $XSVMs | Where-Object { $_.is_control_domain -like $true -and $_.domid -eq 0 }
+	}
+	else
+	{
 		$tmp = 'true'
 		$strkey = 'HideFromXenCenter'
-	    $XSVMs = $XSVMs | Where-Object { `
-			!$_.is_a_template -and `
-			!$_.is_a_snapshot -and `
-			!$_.is_control_domain -and `
-			!$_.is_default_template -and `
-			!$_.is_snapshot_from_vmpp -and `
-			!$_.other_config.TryGetValue($strkey, [ref]$tmp) }
+		$XSVMs = $XSVMs | Where-Object { `
+				!$_.is_a_template -and `
+				!$_.is_a_snapshot -and `
+				!$_.is_control_domain -and `
+				!$_.is_default_template -and `
+				!$_.is_snapshot_from_vmpp -and `
+				!$_.other_config.TryGetValue($strkey, [ref]$tmp) }
 	}
 	return $XSVMs
 }
@@ -7857,8 +7870,7 @@ Function OutputHostAlerts
 	[double]$WhenDom0MemUsageExceeds = 0
 	[int32]$WhenDom0ForLongerThan = 0
 	
-	$dom0conf = Get-XenVM | `
-			Where-Object { $_.is_control_domain -and $_.domid -eq 0 -and $_.name_label -like "*$($XSHost.hostname)*" } | `
+	$dom0conf = GetXenVMsOnHost -XSHost $xshost -ControlDomain | `
 			Get-XenVMProperty -XenProperty OtherConfig
 	[xml]$XML = $dom0conf.perfmon
 
@@ -9318,10 +9330,12 @@ Function ProcessVMs
 	}
 	
 	$VMFirst = $True
-	ForEach ($VMName in $Script:VMNames)
+	$XenVMs = GetXenVMsOnHost -OnAllHosts | Sort-Object -Property name_label
+	#ForEach ($VMName in $Script:VMNames)
+	ForEach ($VM in $XenVMs)
 	{
-		Write-Verbose "$(Get-Date -Format G): `tOutput VM $($VMName.name_label)"
-		$VM = Get-XenVM -Name $VMName.name_label
+		Write-Verbose "$(Get-Date -Format G): `tOutput VM $($VM.name_label)"
+		#$VM = Get-XenVM -Name $VMName.name_label
 		$VMMetrics = $VM.guest_metrics | Get-XenVMGuestMetrics
 		if ([String]::IsNullOrEmpty($VMMetrics) -or [String]::IsNullOrEmpty($($VMMetrics.os_version)) -or $VMMetrics.os_version.Count -lt 1 -or [String]::IsNullOrEmpty($($VMMetrics.os_version.name)))
 		{
@@ -9332,7 +9346,9 @@ Function ProcessVMs
 			$VMOSName = $VMMetrics.os_version.name
 		}
 
-		$VMHostData = $VM.resident_on | Get-XenHost
+		#$VMHostData = $VM.resident_on | Get-XenHost
+		$VMHostData = $Script:XSHosts | Where-Object {$_.opaque_ref -like $VM.resident_on.opaque_ref}
+
 		if ([String]::IsNullOrEmpty($VMHostData) -or [String]::IsNullOrEmpty($($VMHostData.name_label)))
 		{
 			If ($VM.power_state -ne "Running")
