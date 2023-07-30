@@ -590,6 +590,7 @@ Param(
 #Created on June 27, 2023
 #
 #.021
+#	Changed folder name from "none" to "<None>" to match the console (Webster)
 #	Updated Function OutputHostGPUProperties with code from the XS team (Webster)
 #	Before when Pool section was skipped, certain data was not collected.
 #	These functions will run separate when Pool is skipped to make sure the other sections get the required data. (JohnB)
@@ -6940,7 +6941,7 @@ Function OutputHostGeneralOverview
 
 	If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
 	{
-		$folderName = "None"
+		$folderName = "<None>"
 	}
 	Else
 	{
