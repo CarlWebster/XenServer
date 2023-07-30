@@ -465,7 +465,7 @@
 	NAME: XS_Inventory.ps1
 	VERSION: 0.021
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: July 28, 2023
+	LASTEDIT: July 30, 2023
 #>
 
 #endregion
@@ -592,21 +592,21 @@ Param(
 #.021
 #	Updated Function OutputHostGPUProperties with code from the XS team (Webster)
 #	Before when Pool section was skipped, certain data was not collected.
-#   These functions will run separate when Pool is skipped to make sure the other sections get the required data. (JohnB)
-#       GatherXSPoolMemoryData
-#       GatherXSPoolStorageData
-#       GatherXSPoolNsetworkingData
-#   Changed the following functions with the previous created functions and data, 
-#   and changed the output to be more aligned to XenCenter (JohnB)
-#       OutputPoolNetworking
-#       OutputPoolStorage
-#       OutputPoolMemory
-#       OutputHostNetworking
-#       OutputHostStorage
-#       OutputHostMemory
-#   Changed the OutputHostUpdates functions, sorting on update name (JohnB)
-#   Changed OutputHostAlerts & ProcessVMs to add GetXenVMsOnHost to reuse data and save speed (JohnB)
-
+#	These functions will run separate when Pool is skipped to make sure the other sections get the required data. (JohnB)
+#		GatherXSPoolMemoryData
+#		GatherXSPoolStorageData
+#		GatherXSPoolNsetworkingData
+#	Changed the following functions with the previous created functions and data, 
+#	and changed the output to be more aligned to XenCenter (JohnB)
+#		OutputPoolNetworking
+#		OutputPoolStorage
+#		OutputPoolMemory
+#		OutputHostNetworking
+#		OutputHostStorage
+#		OutputHostMemory
+#	Changed the OutputHostUpdates functions, sorting on update name (JohnB)
+#	Changed OutputHostAlerts & ProcessVMs to add GetXenVMsOnHost to reuse data and save speed (JohnB)
+#
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
 #		This function is for what you see when looking at Server General Properties, not a host's Properties, General
@@ -868,7 +868,7 @@ $Error.Clear()
 $Script:emailCredentials = $Null
 $script:MyVersion = '0.021'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/28/2023"
+$tmpdate = [datetime] "07/30/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4770,7 +4770,7 @@ Function OutputPoolGeneralOverview
 	
 	If ([String]::IsNullOrEmpty($($Script:XSPool.Other_Config["folder"])))
 	{
-		$folderName = "None"
+		$folderName = "<None>"
 	}
 	Else
 	{
@@ -8490,8 +8490,8 @@ Function OutputHostGPUProperties
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 			-Columns Data, Value `
 			-List `
-			-Format $wdTableGrid `htmlbold
-		-AutoFit $wdAutoFitFixed;
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
 
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
@@ -8555,7 +8555,7 @@ Function OutputHostMemory
 	{
 		$ScriptInformation += @{ Data = "Total Memory"; Value = "$($XSHostMemory.TotalMemory)"; }
 		$ScriptInformation += @{ Data = "Currently used"; Value = "$($XSHostMemory.CurrentlyUsed)"; }
-		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($iXSHostMemorytem.ControlDomainMemory)"; }
+		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($XSHostMemory.ControlDomainMemory)"; }
 		$ScriptInformation += @{ Data = "Available memory"; Value = "$($XSHostMemory.AvailableMemory)"; }
 		$ScriptInformation += @{ Data = "Total max memory"; Value = "$($XSHostMemory.TotalMaxMemory)"; }
 	}
