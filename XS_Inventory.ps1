@@ -590,6 +590,10 @@ Param(
 #Created on June 27, 2023
 #
 #.021
+#	In Function OutputHostGeneral, added section headings for the output (Webster)
+#	In Function OutputHostGeneralOverview, changed Enabled from True/False to Yes/No to match the console (Webster)
+#		Format the expiry date to match the console using (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate)
+#	In Function OutputHostLicense, the license Expiry date was created but not used. Added it to the output. (Webster)
 #	Changed folder name from "none" to "<None>" to match the console (Webster)
 #	Updated Function OutputHostGPUProperties with code from the XS team (Webster)
 #	Before when Pool section was skipped, certain data was not collected.
@@ -6957,6 +6961,15 @@ Function OutputHostGeneralOverview
 		$XSHostDescription = $XSHost.name_description
 	}
 	
+	If($XSHost.enabled)
+	{
+		$XSHostenabled = "Yes"
+	}
+	Else
+	{
+		$XSHostenabled = "No"
+	}
+	
 	If ($MSWord -or $PDF)
 	{
 		If ($HostFirst -eq $False)
@@ -6972,7 +6985,7 @@ Function OutputHostGeneralOverview
 		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", "); }
 		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
 		$ScriptInformation += @{ Data = "Pool master"; Value = $IAmThePoolMaster; }
-		$ScriptInformation += @{ Data = "Enabled"; Value = $XSHost.enabled.ToString(); }
+		$ScriptInformation += @{ Data = "Enabled"; Value = $XSHostenabled; }
 		$ScriptInformation += @{ Data = "iSCSI IQN"; Value = $XSHost.iscsi_iqn; }
 		$ScriptInformation += @{ Data = "Log destination"; Value = $LogLocation; }
 		$ScriptInformation += @{ Data = "Server uptime"; Value = $ServerUptimeString; }
@@ -7005,7 +7018,7 @@ Function OutputHostGeneralOverview
 		Line 2 "Tags`t`t`t: " "$($xtags -join ", ")"
 		Line 2 "Folder`t`t`t: " $folderName
 		Line 2 "Pool master`t`t: " $IAmThePoolMaster
-		Line 2 "Enabled`t`t`t: " $XSHost.enabled.ToString()
+		Line 2 "Enabled`t`t`t: " $XSHostenabled
 		Line 2 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
 		Line 2 "Log destination`t`t: " $LogLocation
 		Line 2 "Server uptime`t`t: " $ServerUptimeString
@@ -7026,7 +7039,7 @@ Function OutputHostGeneralOverview
 		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), "$folderName", $htmlwhite))
 		$rowdata += @(, ('Pool master', ($htmlsilver -bor $htmlbold), $IAmThePoolMaster, $htmlwhite))
-		$rowdata += @(, ("Enabled", ($htmlsilver -bor $htmlbold), $XSHost.enabled.ToString(), $htmlwhite))
+		$rowdata += @(, ("Enabled", ($htmlsilver -bor $htmlbold), $XSHostenabled, $htmlwhite))
 		$rowdata += @(, ("iSCSI IQN", ($htmlsilver -bor $htmlbold), $XSHost.iscsi_iqn, $htmlwhite))
 		$rowdata += @(, ("Log destination", ($htmlsilver -bor $htmlbold), $LogLocation, $htmlwhite))
 		$rowdata += @(, ("Server uptime", ($htmlsilver -bor $htmlbold), $ServerUptimeString, $htmlwhite))
@@ -7084,6 +7097,7 @@ Function OutputHostLicense
 	If ($MSWord -or $PDF)
 	{
 		$ScriptInformation += @{ Data = "Status"; Value = $licenseStatus; }
+		$ScriptInformation += @{ Data = "Expiry date"; Value = (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate); }
 		$ScriptInformation += @{ Data = "License"; Value = "$($XSHost.license_params["sku_marketing_name"])"; }
 		$ScriptInformation += @{ Data = "Number of Sockets"; Value = $($XSHost.license_params["sockets"]); }
 		$ScriptInformation += @{ Data = "License Server Address"; Value = "$($XSHost.license_server["address"])"; }
@@ -7092,6 +7106,7 @@ Function OutputHostLicense
 	If ($Text)
 	{
 		Line 3 "Status`t`t`t: " "$licenseStatus"
+		Line 3 "Expiry date`t`t: " (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate)
 		Line 3 "License`t`t`t: " "$($XSHost.license_params["sku_marketing_name"])"
 		Line 3 "Number of Sockets`t: " $($XSHost.license_params["sockets"])
 		Line 3 "License Server Address`t: " "$($XSHost.license_server["address"])"
@@ -7100,6 +7115,7 @@ Function OutputHostLicense
 	If ($HTML)
 	{
 		$columnHeaders = @("Status", ($htmlsilver -bor $htmlbold), $licenseStatus, $htmlwhite)
+		$rowdata += @(, ("Expiry date", ($htmlsilver -bor $htmlbold), (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate), $htmlwhite))
 		$rowdata += @(, ("License", ($htmlsilver -bor $htmlbold), $($XSHost.license_params["sku_marketing_name"]), $htmlwhite))
 		$rowdata += @(, ("Number of Sockets", ($htmlsilver -bor $htmlbold), "$($XSHost.license_params["sockets"])", $htmlwhite))
 		$rowdata += @(, ("License Server Address", ($htmlsilver -bor $htmlbold), $($XSHost.license_server["address"]), $htmlwhite))
@@ -7626,6 +7642,7 @@ Function OutputHostGeneral
 	
 	If ($MSWord -or $PDF)
 	{
+		WriteWordLine 2 0 "General"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $XSHostDescription; }
@@ -7653,6 +7670,7 @@ Function OutputHostGeneral
 	}
 	If ($Text)
 	{
+		Line 1 "General"
 		Line 2 "Description`t`t: " $XSHostDescription
 		Line 2 "Folder`t`t`t: " $folderName
 		Line 2 "Tags`t`t`t: " "$($xtags -join ", ")"
@@ -7664,6 +7682,7 @@ Function OutputHostGeneral
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
+		WriteHTMLLine 2 0 "General"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $XSHost.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $XSHostDescription, $htmlwhite))
