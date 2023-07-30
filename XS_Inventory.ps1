@@ -5147,7 +5147,7 @@ Function OutputPoolGeneral
 
 	If ($MSWord -or $PDF)
 	{
-		WriteWordLine 2 0 "General"
+		WriteWordLine 3 0 "General"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $Script:XSPool.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
@@ -5173,11 +5173,11 @@ Function OutputPoolGeneral
 	}
 	If ($Text)
 	{
-		Line 1 "General"
-		Line 2 "Name`t`t: " $Script:XSPool.name_label
-		Line 2 "Description`t`t: " $Script:XSPool.name_description
-		Line 2 "Folder`t`t`t: " $folderName
-		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
+		Line 2 "General"
+		Line 3 "Name`t`t: " $Script:XSPool.name_label
+		Line 3 "Description`t`t: " $Script:XSPool.name_description
+		Line 3 "Folder`t`t`t: " $folderName
+		Line 3 "Tags`t`t`t: " $($xtags -join ", ")
 		Line 0 ""
 	}
 	If ($HTML)
@@ -5185,7 +5185,7 @@ Function OutputPoolGeneral
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
-		WriteHTMLLine 2 0 "General"
+		WriteHTMLLine 3 0 "General"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
@@ -8097,6 +8097,20 @@ Function OutputHostAlerts
 Function OutputHostMultipathing
 {
 	Param([object]$XSHost)
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Multipathing"
+	}
+	If ($Text)
+	{
+		Line 2 "Multipathing"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Multipathing"
+	}
+	
 }
 
 Function OutputHostLogDestination
@@ -8516,7 +8530,7 @@ Function OutputHostGPUProperties
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-		$Table.Columns.Item(1).Width = 250;
+		$Table.Columns.Item(1).Width = 275;
 		$Table.Columns.Item(2).Width = 20;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -8532,7 +8546,7 @@ Function OutputHostGPUProperties
 	If ($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("250", "10")
+		$columnWidths = @("275", "10")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
