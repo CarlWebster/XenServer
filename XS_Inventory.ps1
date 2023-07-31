@@ -490,7 +490,7 @@ Param(
 	[parameter(Mandatory = $False)] 
 	[string]$Folder = "",
 	
-	[ValidateSet('All', 'Pool', 'Host', 'VM')]
+	[ValidateSet('All', 'Pool', 'Host', 'SharedStorage', 'VM')]
 	[parameter(Mandatory = $False)] 
 	[String[]] $Section = 'All',
 	
@@ -613,7 +613,13 @@ Param(
 #	Changed OutputHostAlerts & ProcessVMs to add GetXenVMsOnHost to reuse data and save speed (JohnB)
 #	Changed OutputHostNICs to fix issue with Duplex value, showed wrong value (JohnB)
 #	Changed GatherXSPoolStorageData and OutputPoolStorage to return same info and formatting as XC (JohnB)
-#
+#   Added the following helper function for dynamic text fields (calculate required tabs, JohnB)
+#      Get-TextWithTabs
+#   Added Section ProcessSharedStorage with the following functions and output (JohnB)
+#      OutputGeneralStorage
+#      OutputSharedStorageCustomFields
+#      OutputSharedStorageStatus
+#      
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
 #		This function is for what you see when looking at Server General Properties, not a host's Properties, General
@@ -4409,6 +4415,60 @@ Function Get-XSCustomFields
 	Write-Output  $CustomFields
 }
 
+Function Get-XSTags
+{
+	param ([object]$Data)
+	If (-Not [String]::IsNullOrEmpty($Data) -and ($Data | Get-Member -Name tags)) 
+	{
+		$tagData = $Data.tags
+	}
+	ElseIf ($Data -is [String[]])
+	{
+		$tagData = $Data
+	}
+	Else
+	{
+		$tagData = $null
+	}
+	[array]$xtags = @()
+	ForEach ($tag in $tagData)
+	{
+		$xtags += $tag
+	}
+	If ($xtags.count -gt 0)
+	{
+		[array]$xtags = $xtags | Sort-Object
+	}
+	Else
+	{
+		[array]$xtags = @("<None>")
+	}
+	Write-Output $xtags
+}
+
+Function Get-TextWithTabs
+{
+	Param(
+		[Int]$NrTabs,
+
+		[String]$Text,
+
+		[String]$EndChar = "",
+
+		[Int]$TabSize = 8
+	)
+
+	$tabsRequired = $NrTabs - [Math]::Floor($Text.length / $TabSize)
+	$strTabs = ""
+
+	if ($tabsRequired -ge 1)
+	{
+		1..$tabsRequired | ForEach-Object { $strTabs = $strTabs + "`t" }
+	}
+	$finalString = '{0}{1}{2}' -f $Text, $strTabs, $EndChar
+	return $finalString
+}
+
 function Convert-SizeToString
 {
 	param (
@@ -4429,49 +4489,64 @@ function Convert-SizeToString
 	If ($size -ge $pb)
 	{
 		$value = $size / $pb
-		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
 			
 
 			$result = "{0:N0} PB" -f ($Value)
-		} else {
+		}
+		else
+		{
 			$result = "{0:N$Decimal} PB" -f $value
 		}
 	}
 	ElseIf ($size -ge $tb)
 	{
 		$value = $size / $tb
-		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
 			
 
 			$result = "{0:N0} TB" -f ($Value)
-		} else {
+		}
+		else
+		{
 			$result = "{0:N$Decimal} TB" -f $value
 		}
 	}
 	ElseIf ($size -ge $gb)
 	{
 		$value = $size / $gb
-		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
 			$result = "{0:N0} GB" -f ($Value)
-		} else {
+		}
+		else
+		{
 			$result = "{0:N$Decimal} GB" -f $value
 		}
 	}
 	ElseIf ($size -ge $mb)
 	{
 		$value = $size / $mb
-		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
 			$result = "{0:N0} MB" -f ($Value)
-		} else {
+		}
+		else
+		{
 			$result = "{0:N$Decimal} MB" -f ($Value)
 		}
 	}
 	ElseIf ($size -ge $kb)
 	{
 		$value = $size / $kb
-		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
 			$result = "{0:N0} KB" -f ($Value)
-		} else {
+		}
+		else
+		{
 			$result = "{0:N$Decimal} KB" -f ($Value)
 		}
 	}
@@ -4555,7 +4630,9 @@ Function GatherXSPoolStorageData
 	ForEach ($item in $pbds)
 	{
 		$XSHost = $Script:XSHosts | Where-Object { $_.opaque_ref -like $item.host.opaque_ref }
+		$PoolMaster = ($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref)
 		$XSHostName = $XSHost.name_label
+		$additionalData = [hashtable]@{}
 		$sr = $item.SR | Get-XenSR -EA 0
 
 		$description = $($sr.name_description)
@@ -4586,10 +4663,11 @@ Function GatherXSPoolStorageData
 		{
 			$shared = "No"
 		}
-		$SRtype = $($sr.type).Replace("iso","ISO").Replace("nfs","NFS").Replace("ext","Ext3")
+		$SRtype = $($sr.type).Replace("iso", "ISO").Replace("nfs", "NFS").Replace("ext", "Ext3").Replace("smb", "SMB").Replace("nfs", "NFS")
 		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
 		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
 		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
+		
 		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
 		{
 			$usage = '0% (0 B)'
@@ -4598,16 +4676,47 @@ Function GatherXSPoolStorageData
 		{
 			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
 		}
+		$sizeGeneral = '{0} used of {1} total ({2} allocated)' -f $used, $size, $virtualAlloc
+		If ($sr.sm_config["devserial"])
+		{
+			try
+			{
+				$aKey, $aValue = $sr.sm_config["devserial"].Split("-")
+				$aKey = '{0} ID' -f $aKey.ToUpper()
+				$additionalData.Add($aKey, $aValue)
+			}
+			catch {}
+		}
+		If ($sr.type -notin "iso", "udev")
+		{
+			$additionalData.Add("Size", $sizeGeneral)
+		}
+		If ([String]::IsNullOrEmpty($($sr.other_config["folder"]))) 
+		{
+			$folder = "<None>"
+		}
+		Else 
+		{
+			$folder = $sr.other_config["folder"]
+		}
+
 		$XSPoolStorages += $sr | Select-Object -Property `
 		@{Name = 'XSHostName'; Expression = { $XSHostName } },
 		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
+		@{Name = 'PoolMaster'; Expression = { $PoolMaster } },
 		@{Name = 'Name'; Expression = { $nameLabel } },
 		@{Name = 'Description'; Expression = { $description } },
 		@{Name = 'Type'; Expression = { $SRtype } },
 		@{Name = 'Shared'; Expression = { $shared } },
 		@{Name = 'Usage'; Expression = { $usage } },
+		@{Name = 'Tags'; Expression = { Get-XSTags $sr } },
+		@{Name = 'Folder'; Expression = { $folder } },
+		@{Name = 'CustomFields'; Expression = { Get-XSCustomFields $_.other_config } },
 		@{Name = 'Size'; Expression = { $size } },
-		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } }
+		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } },
+		@{Name = 'Attached'; Expression = { $item.currently_attached } },
+		@{Name = 'AdditionalData'; Expression = { $additionalData } },
+		@{Name = 'UUID'; Expression = { $_.uuid } }
 	}
 	$Script:XSPoolStorages = @($XSPoolStorages | Sort-Object -Property XSHostName, Name)
 }
@@ -4733,7 +4842,7 @@ Function GetXenVMsOnHost
 	return $XSVMs
 }
 
-#endregion Functions
+#endregion XS Specific Functions
 
 
 #region pool
@@ -6889,7 +6998,7 @@ Function OutputPoolUsers
 	}
 
 }
-#endregion
+#endregion pool
 
 #region hosts
 Function ProcessHosts
@@ -9286,7 +9395,6 @@ Function OutputHostGPU
 	}
 	Else
 	{
-		
 		If ($MSWord -or $PDF)
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
@@ -9395,7 +9503,290 @@ Function OutputHostGPU
 		}
 	}
 }
-#endregion
+#endregion hosts
+
+#region SharedStorage
+
+Function ProcessSharedStorage
+{
+	Write-Verbose "$(Get-Date -Format G): Process Shared Storages"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 1 0 "Shared Storages"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 0 "Shared Storages"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 1 0 "Shared Storages"
+	}
+	
+	$XSSharedStorages = $Script:XSPoolStorages | Where-Object { $_.Shared -eq "Yes" -and $_.PoolMaster -eq $true }
+
+	ForEach ($storage in $XSSharedStorages)
+	{
+		OutputGeneralStorage $storage
+		OutputSharedStorageCustomFields $storage
+		OutputSharedStorageStatus $storage
+	}
+}
+
+Function OutputGeneralStorage
+{
+	Param([object]$Storage)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Shared Storage General"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "General: $($storage.Name)"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($storage.Name); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($storage.Description); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($storage.Tags -join ", "); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $($storage.Folder); }
+		$ScriptInformation += @{ Data = "Type"; Value = $($storage.Type); }
+		$storage.AdditionalData.GetEnumerator() | ForEach-Object { $ScriptInformation += @{ Data = $_.Key; Value = $_.Value; } }
+		$ScriptInformation += @{ Data = "UUID"; Value = $($storage.UUID); }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(2).Width = 300;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 1 "General"
+		Line 2 "Name`t`t: " $($storage.Name)
+		Line 2 "Description`t: " $($storage.Description)
+		Line 2 "Tags`t`t: " $($storage.Tags)
+		Line 2 "Folder`t`t: " $($storage.Folder)
+		Line 2 "Type`t`t: " $($storage.Type)
+		$storage.AdditionalData.GetEnumerator() | ForEach-Object { Line 2 "$(Get-TextWithTabs 2 $_.Key): " $($_.Value) }
+		Line 2 "UUID`t`t: " $($storage.UUID)
+
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "General: $($storage.Name)"
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($storage.Name), $htmlwhite)
+		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $($storage.Description), $htmlwhite))
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), $($storage.Tags), $htmlwhite))
+		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $($storage.Folder), $htmlwhite))
+		$rowdata += @(, ('Type', ($htmlsilver -bor $htmlbold), $($storage.Type), $htmlwhite))
+		$storage.AdditionalData.GetEnumerator() | ForEach-Object { $rowdata += @(, ($_.Key, ($htmlsilver -bor $htmlbold), $($_.Value), $htmlwhite)) }
+		$rowdata += @(, ('UUID', ($htmlsilver -bor $htmlbold), $($storage.UUID), $htmlwhite))
+		$msg = ""
+		$columnWidths = @("100", "300")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputSharedStorageCustomFields
+{
+	Param([object] $Storage)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Shared Storage Custom Fields"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 2 "Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Custom Fields"
+	}
+	
+	If ([String]::IsNullOrEmpty($Storage.CustomFields) -or $Storage.CustomFields.Count -eq 0)
+	{
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no Custom Fields for Storage $($Storage.Name))"
+		}
+		If ($Text)
+		{
+			Line 3 "There are no Custom Fields for Storage $($Storage.Name))"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no Custom Fields for Storage $($Storage.Name))"
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If ($Text)
+		{
+			#nothing
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+		}
+
+		[int]$cnt = -1
+		ForEach ($Item in $Storage.CustomFields)
+		{
+			$cnt++
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = $($Item.Name); Value = $Item.Value; }
+			}
+			If ($Text)
+			{
+				Line 3 "$($Item.Name): " $Item.Value
+			}
+			If ($HTML)
+			{
+				If ($cnt -eq 0)
+				{
+					$columnHeaders = @($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
+				}
+				Else
+				{
+					$rowdata += @(, ($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
+				}
+			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 250;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("225", "225")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+}
+
+Function OutputSharedStorageStatus
+{
+	Param([object]$Storage)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Shared Storage General"
+
+	$storageStatusData = $Script:XSPoolStorages | Where-Object { $_.UUID -eq $Storage.UUID }
+
+	If ($False -in $storageStatusData.Attached)
+	{
+		$storageState = "Broken"
+	}
+	Else
+	{
+		$storageState = "OK"
+	}
+	$storageHostStatus = [hashtable]@{}
+	ForEach ($item in $storageStatusData)
+	{
+		If($item.Attached -eq $True)
+		{
+		$storageHostStatus.Add($item.XSHostName,"Connected")
+		}
+		Else
+		{
+			$storageHostStatus.Add($item.XSHostName,"Broken")
+		}
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Status"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "State"; Value = $storageState; }
+		$storageHostStatus.GetEnumerator() | ForEach-Object { $ScriptInformation += @{ Data = $_.Key; Value = $_.Value; } }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(2).Width = 300;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 1 "Status"
+		Line 2 "$(Get-TextWithTabs 3 "State"): " "$($storageState)"
+		$storageHostStatus.GetEnumerator() | ForEach-Object { Line 2 "$(Get-TextWithTabs 3 $_.Key): " $($_.Value) }
+
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Status"
+		$rowdata = @()
+		$columnHeaders = @("State", ($htmlsilver -bor $htmlbold), $storageState, $htmlwhite)
+		$storageHostStatus.GetEnumerator() | ForEach-Object { $rowdata += @(, ($_.Key, ($htmlsilver -bor $htmlbold), $($_.Value), $htmlwhite)) }
+		$msg = ""
+		$columnWidths = @("100", "300")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+#endregion SharedStorage
 
 #region VMs
 Function ProcessVMs
@@ -11186,7 +11577,7 @@ Function OutputVMSnapshots
 	}
 }
 
-#endregion
+#endregion VMs
 
 #region script core
 #Script begins
@@ -11231,11 +11622,15 @@ If (("Host" -in $Section) -or ("All" -in $Section))
 {
 	ProcessHosts
 }
+If (("SharedStorage" -in $Section) -or ("All" -in $Section))
+{
+	ProcessSharedStorage
+}
 If (("VM" -in $Section) -or ("All" -in $Section))
 {
 	ProcessVMs
 }
-#endregion
+#endregion script core
 
 #region finish script
 Write-Verbose "$(Get-Date -Format G): Finishing up document"
