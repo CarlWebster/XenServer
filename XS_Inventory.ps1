@@ -619,7 +619,7 @@ Param(
 #      OutputGeneralStorage
 #      OutputSharedStorageCustomFields
 #      OutputSharedStorageStatus
-#      
+#   Changed GatherXSPoolNsetworkingData to fix an issue with Auto assign value
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
 #		This function is for what you see when looking at Server General Properties, not a host's Properties, General
@@ -4738,7 +4738,6 @@ Function GatherXSPoolNsetworkingData
 				{
 					$nic = ""
 					$vlan = ""
-					$autoAssign = "No"
 					$linkStatus = "<None>"
 					$mac = "-"
 				}
@@ -4756,15 +4755,6 @@ Function GatherXSPoolNsetworkingData
 						$vlan = "$($pif.VLAN)"
 						$mac = "-"
 					}
-					if ($Item.other_config["automatic"] -like $true)
-					{
-						$autoAssign = "Yes"
-					}
-					else
-					{
-						$autoAssign = "No"
-					}
-					
 					$pifMetrics = $pif.metrics | Get-XenPIFMetrics
 					if ($pifMetrics.carrier -like $true)
 					{
@@ -4775,7 +4765,15 @@ Function GatherXSPoolNsetworkingData
 						$linkStatus = "Disconnected"
 					}
 				}
-				if (($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref))
+				if ($Item.other_config["automatic"] -like $false)
+				{
+					$autoAssign = "No"
+				}
+				else
+				{
+					$autoAssign = "Yes"
+				}
+  			    if (($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref))
 				{
 					$hostIsPoolMaster = $true
 				}
