@@ -611,6 +611,8 @@ Param(
 #		OutputHostMemory
 #	Changed the OutputHostUpdates functions, sorting on update name (JohnB)
 #	Changed OutputHostAlerts & ProcessVMs to add GetXenVMsOnHost to reuse data and save speed (JohnB)
+#	Changed OutputHostNICs to fix issue with Duplex value, showed wrong value (JohnB)
+#	Changed GatherXSPoolStorageData and OutputPoolStorage to return same info and formatting as XC (JohnB)
 #
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
@@ -4413,35 +4415,70 @@ function Convert-SizeToString
 		[Parameter(Mandatory = $true)]
 		[Int64]$Size,
 
-		[Int]$Decimal = 2
+		[Int]$Decimal = 2,
+
+		[Switch]$NoRoundOnZero
 	)
 
+	$pb = 1PB
 	$tb = 1TB
 	$gb = 1GB
 	$mb = 1MB
 	$kb = 1KB
 
-	If ($size -ge $tb)
+	If ($size -ge $pb)
 	{
-		$result = "{0:N$Decimal} TB" -f ($size / $tb)
+		$value = $size / $pb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+			
+
+			$result = "{0:N0} PB" -f ($Value)
+		} else {
+			$result = "{0:N$Decimal} PB" -f $value
+		}
+	}
+	ElseIf ($size -ge $tb)
+	{
+		$value = $size / $tb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+			
+
+			$result = "{0:N0} TB" -f ($Value)
+		} else {
+			$result = "{0:N$Decimal} TB" -f $value
+		}
 	}
 	ElseIf ($size -ge $gb)
 	{
-		$result = "{0:N$Decimal} GB" -f ($size / $gb)
+		$value = $size / $gb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+			$result = "{0:N0} GB" -f ($Value)
+		} else {
+			$result = "{0:N$Decimal} GB" -f $value
+		}
 	}
 	ElseIf ($size -ge $mb)
 	{
-		$result = "{0:N$Decimal} MB" -f ($size / $mb)
+		$value = $size / $mb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+			$result = "{0:N0} MB" -f ($Value)
+		} else {
+			$result = "{0:N$Decimal} MB" -f ($Value)
+		}
 	}
 	ElseIf ($size -ge $kb)
 	{
-		$result = "{0:N$Decimal} KB" -f ($size / $kb)
+		$value = $size / $kb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero) {
+			$result = "{0:N0} KB" -f ($Value)
+		} else {
+			$result = "{0:N$Decimal} KB" -f ($Value)
+		}
 	}
 	Else
 	{
 		$result = "{0} B" -f $size
 	}
-
 	return $result
 }
 
@@ -4520,22 +4557,36 @@ Function GatherXSPoolStorageData
 		$XSHost = $Script:XSHosts | Where-Object { $_.opaque_ref -like $item.host.opaque_ref }
 		$XSHostName = $XSHost.name_label
 		$sr = $item.SR | Get-XenSR -EA 0
-		If ([String]::IsNullOrEmpty($($sr.name_description))) 
+
+		$description = $($sr.name_description)
+		If ($sr.name_label -like "Removable storage" -or `
+				$sr.name_label -like "*DVD drives" -or `
+				$sr.name_label -like "Local storage") 
 		{
-			$description = '{0} on {1}' -f $sr.name_label, $XSHostName
+			$nameLabel = '{0} on {1}' -f $sr.name_label, $XSHostName
+			If ([String]::IsNullOrEmpty($($sr.name_description))) 
+			{
+				$description = '{0} on {1}' -f $sr.name_label, $XSHostName
+			}
+			Else
+			{
+				$description = $($sr.name_description)
+			}
 		}
 		Else
 		{
-			$description = $($sr.name_description)
+			$nameLabel = $($sr.name_label)
 		}
+
 		If ($sr.shared -like $true)
 		{
-			$shared = "yes"
+			$shared = "Yes"
 		}
 		Else
 		{
-			$shared = "no"
+			$shared = "No"
 		}
+		$SRtype = $($sr.type).Replace("iso","ISO").Replace("nfs","NFS").Replace("ext","Ext3")
 		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
 		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
 		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
@@ -4550,9 +4601,9 @@ Function GatherXSPoolStorageData
 		$XSPoolStorages += $sr | Select-Object -Property `
 		@{Name = 'XSHostName'; Expression = { $XSHostName } },
 		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
-		@{Name = 'Name'; Expression = { $_.name_label } },
+		@{Name = 'Name'; Expression = { $nameLabel } },
 		@{Name = 'Description'; Expression = { $description } },
-		@{Name = 'Type'; Expression = { $_.type } },
+		@{Name = 'Type'; Expression = { $SRtype } },
 		@{Name = 'Shared'; Expression = { $shared } },
 		@{Name = 'Usage'; Expression = { $usage } },
 		@{Name = 'Size'; Expression = { $size } },
@@ -6162,6 +6213,7 @@ Function OutputPoolStorage
 				If ($MSWord -or $PDF)
 				{
 					$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+					$ScriptInformation += @{ Data = "     Host"; Value = $($item.XSHostName); }
 					$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
 					$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
 					$ScriptInformation += @{ Data = "     Shared"; Value = $($item.Shared); }
@@ -6172,6 +6224,7 @@ Function OutputPoolStorage
 				If ($Text)
 				{
 					Line 3 "Name: " $($item.Name)
+					Line 4 "Host`t`t`t: " $($item.XSHostName)
 					Line 4 "Description`t`t: " $($item.Description)
 					Line 4 "Type`t`t`t: " $($item.Type)
 					Line 4 "Shared`t`t`t: " $($item.Shared)
@@ -6183,6 +6236,7 @@ Function OutputPoolStorage
 				If ($HTML)
 				{
 					$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+					$rowdata += @(, ("     Host", ($htmlsilver -bor $htmlbold), $($item.XSHostName), $htmlwhite))
 					$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
 					$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
 					$rowdata += @(, ("     Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
@@ -6961,7 +7015,7 @@ Function OutputHostGeneralOverview
 		$XSHostDescription = $XSHost.name_description
 	}
 	
-	If($XSHost.enabled)
+	If ($XSHost.enabled)
 	{
 		$XSHostenabled = "Yes"
 	}
@@ -9011,11 +9065,11 @@ Function OutputHostNICs
 				$linkStatus = "Connected"
 				If ([String]::IsNullOrEmpty($($pifMetrics.duplex)) -or $pifMetrics.duplex -like $false)
 				{
-					$nicDuplex = "Full"
+					$nicDuplex = "Half"
 				}
 				Else
 				{
-					$nicDuplex = "Half"
+					$nicDuplex = "Full"
 				}
 				If ($pifMetrics.speed -gt 0)
 				{
@@ -9381,7 +9435,7 @@ Function ProcessVMs
 		}
 
 		#$VMHostData = $VM.resident_on | Get-XenHost
-		$VMHostData = $Script:XSHosts | Where-Object {$_.opaque_ref -like $VM.resident_on.opaque_ref}
+		$VMHostData = $Script:XSHosts | Where-Object { $_.opaque_ref -like $VM.resident_on.opaque_ref }
 
 		if ([String]::IsNullOrEmpty($VMHostData) -or [String]::IsNullOrEmpty($($VMHostData.name_label)))
 		{
