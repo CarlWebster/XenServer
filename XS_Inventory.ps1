@@ -463,9 +463,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.020
+	VERSION: 0.021
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: July 28, 2023
+	LASTEDIT: August 1, 2023
 #>
 
 #endregion
@@ -490,7 +490,7 @@ Param(
 	[parameter(Mandatory = $False)] 
 	[string]$Folder = "",
 	
-	[ValidateSet('All', 'Pool', 'Host', 'VM')]
+	[ValidateSet('All', 'Pool', 'Host', 'SharedStorage', 'VM')]
 	[parameter(Mandatory = $False)] 
 	[String[]] $Section = 'All',
 	
@@ -588,6 +588,59 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.021
+#	Cleanup console output (Webster)
+#	Added the following Functions (Webster)
+#		OutputPoolStorageGeneral
+#		OutputPoolStorageCustomFields
+#		OutputPoolStorageAlerts
+#		OutputPoolStorageReadCaching 
+#		OutputPoolNetworkGeneral
+#		OutputPoolNetworkCustomFields
+#		OutputPoolNetworkNetworkSettings
+#		OutputHostStorageGeneral
+#		OutputHostStorageCustomFields
+#		OutputHostStorageAlerts
+#		OutputHostNetworkGeneral
+#		OutputHostNetworkCustomFields
+#		OutputHostNetworkNetworkSettings
+#		OutputVMStorageGeneral
+#		OutputVMStorageCustomFields
+#		OutputVMStorageSizeandLocation
+#		OutputVMStorageVMInfo
+#	Fixed minor output issues for all formats (Webster)
+#	Updated Function OutputHostMultipathing with Enabled/Disabled status (Webster)
+#	In Function OutputHostGeneral, added section headings for the output (Webster)
+#	In Function OutputHostGeneralOverview, changed Enabled from True/False to Yes/No to match the console (Webster)
+#		Format the expiry date to match the console using (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate)
+#	In Function OutputHostLicense, the license Expiry date was created but not used. Added it to the output. (Webster)
+#	Changed folder name from "none" to "<None>" to match the console (Webster)
+#	Updated Function OutputHostGPUProperties with code from the XS team (Webster)
+#	Before when Pool section was skipped, certain data was not collected.
+#	These functions will run separate when Pool is skipped to make sure the other sections get the required data. (JohnB)
+#		GatherXSPoolMemoryData
+#		GatherXSPoolStorageData
+#		GatherXSPoolNetworkingData
+#	Changed the following functions with the previous created functions and data, 
+#	and changed the output to be more aligned to XenCenter (JohnB)
+#		OutputPoolNetworking
+#		OutputPoolStorage
+#		OutputPoolMemory
+#		OutputHostNetworking
+#		OutputHostStorage
+#		OutputHostMemory
+#	Changed the OutputHostUpdates functions, sorting on update name (JohnB)
+#	Changed OutputHostAlerts & ProcessVMs to add GetXenVMsOnHost to reuse data and save speed (JohnB)
+#	Changed OutputHostNICs to fix issue with Duplex value, showed wrong value (JohnB)
+#	Changed GatherXSPoolStorageData and OutputPoolStorage to return same info and formatting as XC (JohnB)
+#   Added the following helper function for dynamic text fields (calculate required tabs, JohnB)
+#      Get-TextWithTabs
+#   Added Section ProcessSharedStorage with the following functions and output (JohnB)
+#      OutputGeneralStorage
+#      OutputSharedStorageCustomFields
+#      OutputSharedStorageStatus
+#   Changed GatherXSPoolNetworkingData to fix an issue with Auto assign value
 #
 #.020
 #	Added Function OutputHostGeneralOverview (Webster)
@@ -848,9 +901,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.020'
+$script:MyVersion = '0.021'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "07/28/2023"
+$tmpdate = [datetime] "08/01/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4177,13 +4230,15 @@ Function ProcessScriptSetup
 	$tmptext = "Virtual Machines"
 	$tmp = 'true'
 	$strkey = 'HideFromXenCenter'
-	$Script:VMNames = Get-XenVM -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 | `
+	$Script:XSAllVMs = Get-XenVM -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0
+	$Script:XSVMs = $Script:XSAllVMs | `
 			Where-Object { !$_.is_a_template -and `
 				!$_.is_a_snapshot -and `
 				!$_.is_control_domain -and `
-				!$_.other_config.TryGetValue($strkey, [ref]$tmp) } | `
-			Select-Object name_label | `
-			Sort-Object name_label	
+				!$_.is_default_template -and `
+				!$_.is_snapshot_from_vmpp -and `
+				!$_.other_config.TryGetValue($strkey, [ref]$tmp) } | Sort-Object name_label
+	$Script:VMNames = $Script:XSVMs | Select-Object name_label	
 	If ($? -and $Null -ne $Script:VMNames)
 	{
 		#success
@@ -4382,45 +4437,432 @@ Function Get-XSCustomFields
 	Write-Output  $CustomFields
 }
 
+Function Get-XSTags
+{
+	param ([object]$Data)
+	If (-Not [String]::IsNullOrEmpty($Data) -and ($Data | Get-Member -Name tags)) 
+	{
+		$tagData = $Data.tags
+	}
+	ElseIf ($Data -is [String[]])
+	{
+		$tagData = $Data
+	}
+	Else
+	{
+		$tagData = $null
+	}
+	[array]$xtags = @()
+	ForEach ($tag in $tagData)
+	{
+		$xtags += $tag
+	}
+	If ($xtags.count -gt 0)
+	{
+		[array]$xtags = $xtags | Sort-Object
+	}
+	Else
+	{
+		[array]$xtags = @("<None>")
+	}
+	Write-Output $xtags
+}
+
+Function Get-TextWithTabs
+{
+	Param(
+		[Int]$NrTabs,
+
+		[String]$Text,
+
+		[String]$EndChar = "",
+
+		[Int]$TabSize = 8
+	)
+
+	$tabsRequired = $NrTabs - [Math]::Floor($Text.length / $TabSize)
+	$strTabs = ""
+
+	if ($tabsRequired -ge 1)
+	{
+		1..$tabsRequired | ForEach-Object { $strTabs = $strTabs + "`t" }
+	}
+	$finalString = '{0}{1}{2}' -f $Text, $strTabs, $EndChar
+	return $finalString
+}
+
 function Convert-SizeToString
 {
 	param (
 		[Parameter(Mandatory = $true)]
 		[Int64]$Size,
 
-		[Int]$Decimal = 2
+		[Int]$Decimal = 2,
+
+		[Switch]$NoRoundOnZero
 	)
 
+	$pb = 1PB
 	$tb = 1TB
 	$gb = 1GB
 	$mb = 1MB
 	$kb = 1KB
 
-	If ($size -ge $tb)
+	If ($size -ge $pb)
 	{
-		$result = "{0:N$Decimal} TB" -f ($size / $tb)
+		$value = $size / $pb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
+			
+
+			$result = "{0:N0} PB" -f ($Value)
+		}
+		else
+		{
+			$result = "{0:N$Decimal} PB" -f $value
+		}
+	}
+	ElseIf ($size -ge $tb)
+	{
+		$value = $size / $tb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
+			
+
+			$result = "{0:N0} TB" -f ($Value)
+		}
+		else
+		{
+			$result = "{0:N$Decimal} TB" -f $value
+		}
 	}
 	ElseIf ($size -ge $gb)
 	{
-		$result = "{0:N$Decimal} GB" -f ($size / $gb)
+		$value = $size / $gb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
+			$result = "{0:N0} GB" -f ($Value)
+		}
+		else
+		{
+			$result = "{0:N$Decimal} GB" -f $value
+		}
 	}
 	ElseIf ($size -ge $mb)
 	{
-		$result = "{0:N$Decimal} MB" -f ($size / $mb)
+		$value = $size / $mb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
+			$result = "{0:N0} MB" -f ($Value)
+		}
+		else
+		{
+			$result = "{0:N$Decimal} MB" -f ($Value)
+		}
 	}
 	ElseIf ($size -ge $kb)
 	{
-		$result = "{0:N$Decimal} KB" -f ($size / $kb)
+		$value = $size / $kb
+		if (([math]::Round($value, $Decimal) -eq [int64]$Value) -and !$NoRoundOnZero)
+		{
+			$result = "{0:N0} KB" -f ($Value)
+		}
+		else
+		{
+			$result = "{0:N$Decimal} KB" -f ($Value)
+		}
 	}
 	Else
 	{
 		$result = "{0} B" -f $size
 	}
-
 	return $result
 }
 
-#endregion Functions
+Function GatherXSPoolMemoryData
+{
+	#Write-Verbose "$(Get-Date -Format G): `t Gathering Memory Data"
+	$XSPoolMemories = @()
+	foreach ($XSHost in $Script:XSHosts)
+	{
+		$XSHostName = $XSHost.name_label
+		$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
+		$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
+		$memFree = Convert-SizeToString -size $XSHostMetrics.memory_free -Decimal 1
+		$memoryText = "$memFree RAM available ($memTotal)"
+		$hostVMs = @(GetXenVMsOnHost $XSHost)
+		$hostRunningVMs = @($hostVMs | Where-Object { $_.power_state -like "running" })
+		$dom0VM = GetXenVMsOnHost -XSHost $XSHost -ControlDomain
+		$vmData = @()
+		$vmMemoryUsed = [Int64]0
+		ForEach ($vm in $hostVMs)
+		{
+			if ($vm.power_state -like "running") 
+			{
+				$powerState = "On"
+				$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
+			}
+			Else
+			{
+				$powerState = "Off"
+			}
+			$vmData += [PSCustomObject]@{
+				VMText       = $('{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1))
+				VMName       = $vm.name_label
+				VMPowerState = $powerState
+				VMMemoryMin  = ""
+				VMMemoryMax  = ""
+				VMMemory     = $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
+			}
+		}
+		$vmData = $vmData | Sort-Object -Property VMName
+		$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
+		$memXS = Convert-SizeToString -size $memXSNum -Decimal 1
+		$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
+		$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
+		$memXSUsed = Convert-SizeToString -size $memXSUsedNum -Decimal 1
+		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
+		$memXSAvailable = Convert-SizeToString -size $memXSAvailableNum -Decimal 1
+		$cdMemory = Convert-SizeToString -size $dom0VM.memory_target -Decimal 1
+
+
+		$XSPoolMemories += "" | Select-Object -Property `
+		@{Name = 'XSHostName'; Expression = { $XSHostName } },
+		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
+		@{Name = 'Server'; Expression = { $memoryText } },
+		@{Name = 'TotalMemory'; Expression = { $memTotal } },
+		@{Name = 'CurrentlyUsed'; Expression = { $memXSUsed } },
+		@{Name = 'ControlDomainMemory'; Expression = { $cdMemory } },
+		@{Name = 'AvailableMemory'; Expression = { $memXSAvailable } },
+		@{Name = 'TotalMaxMemory'; Expression = { "$($memXSUsed) ($memXSUsedPct of total memory)" } },
+		@{Name = 'VMs'; Expression = { $hostRunningVMs.Count } },
+		@{Name = 'VMData'; Expression = { $vmData } },
+		@{Name = 'XenServerMemory'; Expression = { $memXS } }
+	}
+	$Script:XSPoolMemories = $XSPoolMemories | Sort-Object -Property XSHostName
+
+}
+
+Function GatherXSPoolStorageData
+{
+	#Write-Verbose "$(Get-Date -Format G): `t Gather Storage Data"
+	$pbds = Get-XenPBD | Where-Object { $_.host.opaque_ref -in $Script:XSHosts.opaque_ref }
+
+	$XSPoolStorages = @()
+	ForEach ($item in $pbds)
+	{
+		$XSHost = $Script:XSHosts | Where-Object { $_.opaque_ref -like $item.host.opaque_ref }
+		$PoolMaster = ($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref)
+		$XSHostName = $XSHost.name_label
+		$additionalData = [hashtable]@{}
+		$sr = $item.SR | Get-XenSR -EA 0
+
+		$description = $($sr.name_description)
+		If ($sr.name_label -like "Removable storage" -or `
+				$sr.name_label -like "*DVD drives" -or `
+				$sr.name_label -like "Local storage") 
+		{
+			$nameLabel = '{0} on {1}' -f $sr.name_label, $XSHostName
+			If ([String]::IsNullOrEmpty($($sr.name_description))) 
+			{
+				$description = '{0} on {1}' -f $sr.name_label, $XSHostName
+			}
+			Else
+			{
+				$description = $($sr.name_description)
+			}
+		}
+		Else
+		{
+			$nameLabel = $($sr.name_label)
+		}
+
+		If ($sr.shared -like $true)
+		{
+			$shared = "Yes"
+		}
+		Else
+		{
+			$shared = "No"
+		}
+		$SRtype = $($sr.type).Replace("iso", "ISO").Replace("nfs", "NFS").Replace("ext", "Ext3").Replace("smb", "SMB").Replace("nfs", "NFS")
+		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
+		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
+		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
+		
+		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
+		{
+			$usage = '0% (0 B)'
+		}
+		Else
+		{
+			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
+		}
+		$sizeGeneral = '{0} used of {1} total ({2} allocated)' -f $used, $size, $virtualAlloc
+		If ($sr.sm_config["devserial"])
+		{
+			try
+			{
+				$aKey, $aValue = $sr.sm_config["devserial"].Split("-")
+				$aKey = '{0} ID' -f $aKey.ToUpper()
+				$additionalData.Add($aKey, $aValue)
+			}
+			catch {}
+		}
+		If ($sr.type -notin "iso", "udev")
+		{
+			$additionalData.Add("Size", $sizeGeneral)
+		}
+		If ([String]::IsNullOrEmpty($($sr.other_config["folder"]))) 
+		{
+			$folder = "<None>"
+		}
+		Else 
+		{
+			$folder = $sr.other_config["folder"]
+		}
+
+		$XSPoolStorages += $sr | Select-Object -Property `
+		@{Name = 'XSHostName'; Expression = { $XSHostName } },
+		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
+		@{Name = 'PoolMaster'; Expression = { $PoolMaster } },
+		@{Name = 'Name'; Expression = { $nameLabel } },
+		@{Name = 'Description'; Expression = { $description } },
+		@{Name = 'Type'; Expression = { $SRtype } },
+		@{Name = 'Shared'; Expression = { $shared } },
+		@{Name = 'Usage'; Expression = { $usage } },
+		@{Name = 'Tags'; Expression = { Get-XSTags $sr } },
+		@{Name = 'Folder'; Expression = { $folder } },
+		@{Name = 'CustomFields'; Expression = { Get-XSCustomFields $_.other_config } },
+		@{Name = 'Size'; Expression = { $size } },
+		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } },
+		@{Name = 'Attached'; Expression = { $item.currently_attached } },
+		@{Name = 'AdditionalData'; Expression = { $additionalData } },
+		@{Name = 'UUID'; Expression = { $_.uuid } }
+	}
+	$Script:XSPoolStorages = @($XSPoolStorages | Sort-Object -Property XSHostName, Name)
+}
+
+Function GatherXSPoolNetworkingData
+{
+	#Write-Verbose "$(Get-Date -Format G): `t Gathering Networking data"
+	$networks = @(Get-XenNetwork -EA 0 | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
+	$XSNetworks = @()
+	$nrNetworks = $networks.Count
+	If ($nrNetworks -ge 1)
+	{
+		ForEach ($Item in $networks)
+		{
+			ForEach ($XSHost in $Script:XSHosts)
+			{
+				$pif = $Item.PIFs | Get-XenPIF -EA 0 | Where-Object { $XSHost.opaque_ref -in $_.host }
+				if ([String]::IsNullOrEmpty($pif))
+				{
+					$nic = ""
+					$vlan = ""
+					$linkStatus = "<None>"
+					$mac = "-"
+				}
+				else
+				{
+					$nic = $pif.device.Replace("eth", "NIC ")
+					
+					If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
+					{
+						$vlan = "-"
+						$mac = $pif.MAC
+					}
+					Else
+					{
+						$vlan = "$($pif.VLAN)"
+						$mac = "-"
+					}
+					$pifMetrics = $pif.metrics | Get-XenPIFMetrics
+					if ($pifMetrics.carrier -like $true)
+					{
+						$linkStatus = "Connected"
+					}
+					else
+					{
+						$linkStatus = "Disconnected"
+					}
+				}
+				if ($Item.other_config["automatic"] -like $false)
+				{
+					$autoAssign = "No"
+				}
+				else
+				{
+					$autoAssign = "Yes"
+				}
+  			    if (($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref))
+				{
+					$hostIsPoolMaster = $true
+				}
+				else
+				{
+					$hostIsPoolMaster = $false
+				}
+				$XSNetworks += $Item | Select-Object -Property `
+				@{Name = 'XSHostname'; Expression = { $XSHost.name_label } },
+				@{Name = 'XSHostref'; Expression = { $XSHost.opaque_ref } },
+				@{Name = 'XSHostPoolMaster'; Expression = { $hostIsPoolMaster } },
+				@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
+				@{Name = 'Description'; Expression = { $_.name_description } },
+				@{Name = 'NIC'; Expression = { $nic } },
+				@{Name = 'VLAN'; Expression = { $vlan } },
+				@{Name = 'Auto'; Expression = { $autoAssign } },
+				@{Name = 'LinkStatus'; Expression = { $linkStatus } },
+				@{Name = 'MAC'; Expression = { $mac } },
+				@{Name = 'MTU'; Expression = { $item.MTU } },
+				@{Name = 'SRIOV'; Expression = { "" } }
+			}
+		}
+	}
+	$Script:XSPoolNetworks = @($XSNetworks | Sort-Object -Property XSHostname, Name)
+}
+
+Function GetXenVMsOnHost
+{
+	Param(
+		[object]$XSHost,
+
+		[Switch]$ControlDomain,
+
+		[Switch]$OnAllHosts
+	)
+	If ($OnAllHosts) 
+	{
+		$XSVMs = $Script:XSAllVMs
+	}
+	Else
+	{
+		$XSVMs = $Script:XSAllVMs | Where-Object { `
+				$_.affinity.opaque_ref -like $XSHost.opaque_ref -or `
+				$_.resident_on.opaque_ref -like $XSHost.opaque_ref -or `
+				$_.scheduled_to_be_resident_on.opaque_ref -like $XSHost.opaque_ref
+		}
+	}
+	if ($ControlDomain)
+	{
+		$XSVMs = $XSVMs | Where-Object { $_.is_control_domain -like $true -and $_.domid -eq 0 }
+	}
+	else
+	{
+		$tmp = 'true'
+		$strkey = 'HideFromXenCenter'
+		$XSVMs = $XSVMs | Where-Object { `
+				!$_.is_a_template -and `
+				!$_.is_a_snapshot -and `
+				!$_.is_control_domain -and `
+				!$_.is_default_template -and `
+				!$_.is_snapshot_from_vmpp -and `
+				!$_.other_config.TryGetValue($strkey, [ref]$tmp) }
+	}
+	return $XSVMs
+}
+
+#endregion XS Specific Functions
 
 
 #region pool
@@ -4513,7 +4955,7 @@ Function OutputPoolGeneralOverview
 	
 	If ([String]::IsNullOrEmpty($($Script:XSPool.Other_Config["folder"])))
 	{
-		$folderName = "None"
+		$folderName = "<None>"
 	}
 	Else
 	{
@@ -4635,7 +5077,7 @@ Function OutputPoolUpdates
 			}
 		}
 		#>
-		Line 2 "Fully applied`t: " ""
+		Line 2 "Fully applied: " ""
 		ForEach ($tmp in $Updates)
 		{
 			Line 3 "" "$($tmp.name_label) (version $($tmp.version))"
@@ -4775,10 +5217,10 @@ Function OutputPoolManagementInterfaces
 	}
 	If ($Text)
 	{
-		Line 2 "Management Interfaces"
+		Line 1 "Management Interfaces"
 		Line 2 "=============================================================="
-		#		1234567890123456789012345678901234567890SS12345678901234567890
-		#		Management interface on 'XenServer1       255.255.255.255
+		#	1234567890123456789012345678901234567890SS12345678901234567890
+		#	Management interface on 'XenServer1'      255.255.255.255
 		ForEach ($Server in $Script:XSHosts)
 		{
 			Line 2 ( "{0,-40}    {1,-20}" -f "DNS hostname on $($server.name_label):", $Server.hostname)
@@ -4789,15 +5231,15 @@ Function OutputPoolManagementInterfaces
 			{
 				If ($pif.IP)
 				{
-					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "$($pif.IP)")
+					Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "$($pif.IP)")
 				}
 				ElseIf ($pif.ip_configuration_mode -eq [XenAPI.ip_configuration_mode]::DHCP)
 				{
-					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "DHCP")
+					Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "DHCP")
 				}
 				Else
 				{
-					Line 2 ( "{0,-40}    {1,-20}" -f "Management interface on $($server.name_label):", "Unknown")
+					Line 2 ( "{0,-40}  {1,-20}" -f "Management interface on $($server.name_label):", "Unknown")
 				}
 			} 
 		}
@@ -4875,7 +5317,7 @@ Function OutputPoolGeneral
 	
 	If ([String]::IsNullOrEmpty($($Script:XSPool.Other_Config["folder"])))
 	{
-		$folderName = "None"
+		$folderName = "<None>"
 	}
 	Else
 	{
@@ -4912,10 +5354,10 @@ Function OutputPoolGeneral
 	If ($Text)
 	{
 		Line 1 "General"
-		Line 2 "Name`t`t: " $Script:XSPool.name_label
-		Line 2 "Description`t`t: " $Script:XSPool.name_description
-		Line 2 "Folder`t`t`t: " $folderName
-		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
+		Line 2 "Name       : " $Script:XSPool.name_label
+		Line 2 "Description: " $Script:XSPool.name_description
+		Line 2 "Folder     : " $folderName
+		Line 2 "Tags       : " $($xtags -join ", ")
 		Line 0 ""
 	}
 	If ($HTML)
@@ -5734,53 +6176,11 @@ Function OutputPoolClustering
 Function OutputPoolMemory
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Memory"
-	Write-Verbose "$(Get-Date -Format G): `t Pool Storage Gathering data"
-
-	$XSPoolMemories = @()
-	foreach ($XSHost in $Script:XSHosts)
-	{
-		$XSHostName = $XSHost.name_label
-		$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
-		$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
-		$memFree = Convert-SizeToString -size $XSHostMetrics.memory_free -Decimal 1
-		$memoryText = "$memFree RAM available ($memTotal)"
-		$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM | Sort-Object -Property name_label)
-		$hostRunningVMs = @($hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $false -and $_.power_state -like "running" })
-		$dom0VM = $hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $true }
-		$vmText = @()
-		$vmMemoryUsed = [Int64]0
-		ForEach ($vm in $hostRunningVMs)
-		{
-			$vmText += '{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
-			$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
-		}
-	
-		$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
-		$memXS = Convert-SizeToString -size $memXSNum -Decimal 1
-		$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
-		$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
-		$memXSUsed = Convert-SizeToString -size $memXSUsedNum -Decimal 1
-		$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
-		$memXSAvailable = Convert-SizeToString -size $memXSAvailableNum -Decimal 1
-		$cdMemory = Convert-SizeToString -size $dom0VM.memory_target -Decimal 1
-
-
-		$XSPoolMemories += "" | Select-Object -Property `
-		@{Name = 'XSHostName'; Expression = { $XSHostName } },
-		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
-		@{Name = 'Server'; Expression = { $memoryText } },
-		@{Name = 'VMs'; Expression = { $hostRunningVMs.Count } },
-		@{Name = 'VMTexts'; Expression = { $vmText } },
-		@{Name = 'XenServerMemory'; Expression = { $memXS } },
-		@{Name = 'ControlDomainMemory'; Expression = { $cdMemory } },
-		@{Name = 'AvailableMemory'; Expression = { $memXSAvailable } },
-		@{Name = 'TotalMaxMemory'; Expression = { "$($memXSUsed) ($memXSUsedPct of total memory)" } }
-	}
-	$Script:XSPoolMemories = $XSPoolMemories | Sort-Object -Property XSHostName
+	GatherXSPoolMemoryData
 
 	if ($NoPoolMemory -eq $false)
 	{
-		Write-Verbose "$(Get-Date -Format G): `t Pool Memory writing output"
+		#Write-Verbose "$(Get-Date -Format G): `t Pool Memory writing output"
 		If ($MSWord -or $PDF)
 		{
 			$Selection.InsertNewPage()
@@ -5814,21 +6214,17 @@ Function OutputPoolMemory
 			If ($MSWord -or $PDF)
 			{
 				$ScriptInformation += @{ Data = "Host"; Value = "$($XSHostMemory.XSHostName)"; }
-				$ScriptInformation += @{ Data = "Server"; Value = "$($XSHostMemory.Server)"; }
-				$ScriptInformation += @{ Data = "VMs"; Value = "$($XSHostMemory.VMs)"; }
-				$XSHostMemory.VMTexts | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
-				$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
+				$ScriptInformation += @{ Data = "Total Memory"; Value = "$($XSHostMemory.TotalMemory)"; }
+				$ScriptInformation += @{ Data = "Currently used"; Value = "$($XSHostMemory.CurrentlyUsed)"; }
 				$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($XSHostMemory.ControlDomainMemory)"; }
 				$ScriptInformation += @{ Data = "Available memory"; Value = "$($XSHostMemory.AvailableMemory)"; }
 				$ScriptInformation += @{ Data = "Total max memory"; Value = "$($XSHostMemory.TotalMaxMemory)"; }
 			}
 			If ($Text)
 			{
-				Line 3 "Host`t`t`t: " "$($XSHostMemory.XSHostName)"
-				Line 3 "Server`t`t`t: " "$($XSHostMemory.Server)"
-				Line 3 "VMs`t`t`t: " "$($XSHostMemory.VMs)"
-				$XSHostMemory.VMTexts | ForEach-Object { Line 6 "  $($_)" }
-				Line 3 "Citrix Hypervisor`t: " "$($XSHostMemory.XenServerMemory)"
+				Line 2 "Host: " "$($XSHostMemory.XSHostName)"
+				Line 3 "Total Memory`t`t: " "$($XSHostMemory.TotalMemory)"
+				Line 3 "Currently used`t`t: " "$($XSHostMemory.CurrentlyUsed)"
 				Line 3 "Control domain memory`t: " "$($XSHostMemory.ControlDomainMemory)"
 				Line 3 "Available memory`t: " "$($XSHostMemory.AvailableMemory)"
 				Line 3 "Total max memory`t: " "$($XSHostMemory.TotalMaxMemory)"
@@ -5836,10 +6232,8 @@ Function OutputPoolMemory
 			If ($HTML)
 			{
 				$columnHeaders = @("Host", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XSHostName)", ($htmlsilver -bor $htmlbold))
-				$rowdata +=  @(, ("Server", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.Server)", $htmlwhite))
-				$rowdata += @(, ("VMs", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.VMs)", $htmlwhite))
-				$XSHostMemory.VMTexts | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_)", $htmlwhite)) }
-				$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XenServerMemory)", $htmlwhite))
+				$rowdata += @(, ("Total Memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMemory)", $htmlwhite))
+				$rowdata += @(, ("Currently used", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.CurrentlyUsed)", $htmlwhite))
 				$rowdata += @(, ("Control domain memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.ControlDomainMemory)", $htmlwhite))
 				$rowdata += @(, ("Available memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.AvailableMemory)", $htmlwhite))
 				$rowdata += @(, ("Total max memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMaxMemory)", $htmlwhite))
@@ -5887,61 +6281,12 @@ Function OutputPoolMemory
 Function OutputPoolStorage
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Storage"
-	
-	Write-Verbose "$(Get-Date -Format G): `t Pool Storage Gathering data"
-	$pbds = Get-XenPBD | Where-Object { $_.host.opaque_ref -in $Script:XSHosts.opaque_ref }
+	GatherXSPoolStorageData
 
-	$XSPoolStorages = @()
-	ForEach ($item in $pbds)
-	{
-		$XSHost = $Script:XSHosts | Where-Object { $_.opaque_ref -like $item.host.opaque_ref }
-		$XSHostName = $XSHost.name_label
-		$sr = $item.SR | Get-XenSR -EA 0
-		If ([String]::IsNullOrEmpty($($sr.name_description))) 
-		{
-			$description = '{0} on {1}' -f $sr.name_label, $XSHostName
-		}
-		Else
-		{
-			$description = $($sr.name_description)
-		}
-		If ($sr.shared -like $true)
-		{
-			$shared = "yes"
-		}
-		Else
-		{
-			$shared = "no"
-		}
-		$virtualAlloc = Convert-SizeToString -Size $sr.virtual_allocation -Decimal 1
-		$size = Convert-SizeToString -Size $sr.physical_size -Decimal 1
-		$used = Convert-SizeToString -Size $sr.physical_utilisation -Decimal 1
-		If ($sr.physical_utilisation -le 0 -or $sr.physical_size -le 0)
-		{
-			$usage = '0% (0 B)'
-		}
-		Else
-		{
-			$usage = '{0}% ({1} used)' -f [math]::Round($($sr.physical_utilisation / ($sr.physical_size / 100))), $used
-		}
-		$XSPoolStorages += $sr | Select-Object -Property `
-		@{Name = 'XSHostName'; Expression = { $XSHostName } },
-		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
-		@{Name = 'Name'; Expression = { $_.name_label } },
-		@{Name = 'Description'; Expression = { $description } },
-		@{Name = 'Type'; Expression = { $_.type } },
-		@{Name = 'Shared'; Expression = { $shared } },
-		@{Name = 'Usage'; Expression = { $usage } },
-		@{Name = 'Size'; Expression = { $size } },
-		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } }
-	}
-	$XSPoolStorages = @($XSPoolStorages | Sort-Object -Property XSHostName, Name)
-	$storageCount = $XSPoolStorages.Count
-	$Script:XSPoolStorages = $XSPoolStorages
+	$storageCount = $Script:XSPoolStorages.Count
 
-	if ($NoPoolStorage -eq $false) 
+	If ($NoPoolStorage -eq $false) 
 	{
-		Write-Verbose "$(Get-Date -Format G): `t Pool Storage writing output"
 		If ($MSWord -or $PDF)
 		{
 			$Selection.InsertNewPage()
@@ -5949,7 +6294,6 @@ Function OutputPoolStorage
 		}
 		If ($Text)
 		{
-			Line 0 ""
 			Line 1 "Storage"
 		}
 		If ($HTML)
@@ -5965,7 +6309,7 @@ Function OutputPoolStorage
 			}
 			If ($Text)
 			{
-				Line 3 "There is no storage configured for Host $XSHostName"
+				Line 2 "There is no storage configured for Host $XSHostName"
 				Line 0 ""
 			}
 			If ($HTML)
@@ -5979,55 +6323,6 @@ Function OutputPoolStorage
 			{
 				[System.Collections.Hashtable[]] $ScriptInformation = @()
 				$ScriptInformation += @{ Data = "Number of storages"; Value = "$storageCount"; }
-			}
-			If ($Text)
-			{
-				Line 3 "Number of storages: " "$storageCount"
-				Line 0 ""
-			}
-			If ($HTML)
-			{
-				$columnHeaders = @("Number of storages", ($htmlsilver -bor $htmlbold), "$storageCount", $htmlwhite)
-				$rowdata = @()
-			}
-
-			ForEach ($Item in $XSPoolStorages)
-			{
-				If ($MSWord -or $PDF)
-				{
-					$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
-					$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
-					$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
-					$ScriptInformation += @{ Data = "     Shared"; Value = $($item.Shared); }
-					$ScriptInformation += @{ Data = "     Usage"; Value = $($item.Usage); }
-					$ScriptInformation += @{ Data = "     Size"; Value = $($item.Size); }
-					$ScriptInformation += @{ Data = "     Virtual allocation"; Value = $($item.VirtualAllocation); }
-				}
-				If ($Text)
-				{
-					Line 3 "Name: " $($item.Name)
-					Line 4 "Description`t`t: " $($item.Description)
-					Line 4 "Type`t`t`t: " $($item.Type)
-					Line 4 "Shared`t`t`t: " $($item.Shared)
-					Line 4 "Usage`t`t`t: " $($item.Usage)
-					Line 4 "Size`t`t`t: " $($item.Size)
-					Line 4 "Virtual allocation`t: " $($item.VirtualAllocation)
-					Line 0 ""
-				}
-				If ($HTML)
-				{
-					$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
-					$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-					$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
-					$rowdata += @(, ("     Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
-					$rowdata += @(, ("     Usage", ($htmlsilver -bor $htmlbold), $($item.Usage), $htmlwhite))
-					$rowdata += @(, ("     Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
-					$rowdata += @(, ("     Virtual allocation", ($htmlsilver -bor $htmlbold), $($item.VirtualAllocation), $htmlwhite))
-				}
-			}
-		
-			If ($MSWord -or $PDF)
-			{
 				$Table = AddWordTable -Hashtable $ScriptInformation `
 					-Columns Data, Value `
 					-List `
@@ -6048,108 +6343,319 @@ Function OutputPoolStorage
 			}
 			If ($Text)
 			{
+				Line 2 "Number of storages: " "$storageCount"
 				Line 0 ""
 			}
 			If ($HTML)
 			{
+				$columnHeaders = @("Number of storages", ($htmlsilver -bor $htmlbold), "$storageCount", $htmlwhite)
+				$rowdata = @()
 				$msg = ""
 				$columnWidths = @("150", "350")
 				FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 				WriteHTMLLine 0 0 ""
 			}
+
+			$First = $True
+			ForEach ($Item in $Script:XSPoolStorages)
+			{
+				Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool Storage $($item.Name)"
+				If ($MSWord -or $PDF)
+				{
+					WriteWordLine 3 0 "Storage $($item.Name)"
+					If(!$First)
+					{
+						[System.Collections.Hashtable[]] $ScriptInformation = @()
+					}
+					$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+					$ScriptInformation += @{ Data = "     Host"; Value = $($item.XSHostName); }
+					$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
+					$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
+					$ScriptInformation += @{ Data = "     Shared"; Value = $($item.Shared); }
+					$ScriptInformation += @{ Data = "     Usage"; Value = $($item.Usage); }
+					$ScriptInformation += @{ Data = "     Size"; Value = $($item.Size); }
+					$ScriptInformation += @{ Data = "     Virtual allocation"; Value = $($item.VirtualAllocation); }
+				}
+				If ($Text)
+				{
+					Line 2 "Name: " $($item.Name)
+					Line 3 "Host               : " $($item.XSHostName)
+					Line 3 "Description        : " $($item.Description)
+					Line 3 "Type               : " $($item.Type)
+					Line 3 "Shared             : " $($item.Shared)
+					Line 3 "Usage              : " $($item.Usage)
+					Line 3 "Size               : " $($item.Size)
+					Line 3 "Virtual allocation : " $($item.VirtualAllocation)
+				}
+				If ($HTML)
+				{
+					WriteHTMLLine 3 0 "Storage $($item.Name)"
+					If(!$First)
+					{
+						$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+						$rowdata = @()
+					}
+					Else
+					{
+						$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+					}
+					$rowdata += @(, ("     Host", ($htmlsilver -bor $htmlbold), $($item.XSHostName), $htmlwhite))
+					$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+					$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
+					$rowdata += @(, ("     Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
+					$rowdata += @(, ("     Usage", ($htmlsilver -bor $htmlbold), $($item.Usage), $htmlwhite))
+					$rowdata += @(, ("     Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
+					$rowdata += @(, ("     Virtual allocation", ($htmlsilver -bor $htmlbold), $($item.VirtualAllocation), $htmlwhite))
+				}
+				
+				If ($MSWord -or $PDF)
+				{
+					$Table = AddWordTable -Hashtable $ScriptInformation `
+						-Columns Data, Value `
+						-List `
+						-Format $wdTableGrid `
+						-AutoFit $wdAutoFitFixed;
+
+					## IB - Set the header row format
+					SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+					$Table.Columns.Item(1).Width = 150;
+					$Table.Columns.Item(2).Width = 350;
+
+					$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+					FindWordDocumentEnd
+					$Table = $Null
+					WriteWordLine 0 0 ""
+				}
+				If ($Text)
+				{
+					Line 0 ""
+				}
+				If ($HTML)
+				{
+					$msg = ""
+					$columnWidths = @("150", "350")
+					FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+					WriteHTMLLine 0 0 ""
+				}
+				
+				OutputPoolStorageGeneral $item
+				OutputPoolStorageCustomFields $item
+				OutputPoolStorageAlerts $item
+				OutputPoolStorageReadCaching $item
+				$First = $False
+			}
 		}
 	}
 	Else
 	{
-		Write-Verbose "$(Get-Date -Format G): `t Pool Networking skipped"
+		Write-Verbose "$(Get-Date -Format G): `t Pool Storage skipped"
+	}
+}
+
+Function OutputPoolStorageGeneral
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage General"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 4 0 "Storage General"
+	}
+	If ($Text)
+	{
+		Line 3 "Storage General"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 4 0 "Storage General"
+	}
+
+	<#
+		DBG]: PS C:\Webster>> $Item
+
+
+		XSHostName        : XenServer2 (82)
+		XSHostRef         : OpaqueRef:6a7a73ec-bc9a-4f46-8872-45c0f9c2ed09
+		PoolMaster        : True
+		Name              : DVD drives on XenServer2 (82)
+		Description       : Physical DVD drives
+		Type              : udev
+		Shared            : No
+		Usage             : 0% (0 B)
+		Tags              : <None>
+		Folder            : <None>
+		CustomFields      : 
+		Size              : 0 B
+		VirtualAllocation : 0 B
+		Attached          : True
+		AdditionalData    : {}
+		UUID              : 57afb9bb-651b-f107-99ef-5fea073079ef
+	#>
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($item.Description); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $($item.Folder); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($item.Tags); }
+	}
+	If ($Text)
+	{
+		Line 4 "Name       : " $($item.Name)
+		Line 4 "Description: " $($item.Description)
+		Line 4 "Folder     : " $($item.Folder)
+		Line 4 "Tags       : " $($item.Tags)
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 350;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "350")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolStorageCustomFields
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Custom Fields"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 4 0 "Storage Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 3 "Storage Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 4 0 "Storage Custom Fields"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolStorageAlerts
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Alerts"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 4 0 "Storage Alerts"
+	}
+	If ($Text)
+	{
+		Line 3 "Storage Alerts"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 4 0 "Storage Alerts"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolStorageReadCaching
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Read Caching"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 4 0 "Storage Read Caching"
+	}
+	If ($Text)
+	{
+		Line 3 "Storage Read Caching"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 4 0 "Storage Read Caching"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
 	}
 }
 
 Function OutputPoolNetworking
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Networking"
-	Write-Verbose "$(Get-Date -Format G): `t Gathering Networking data"
-	$networks = @(Get-XenNetwork -EA 0 | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
-	$XSNetworks = @()
-	$nrNetworks = $networks.Count
-	If ($nrNetworks -ge 1)
-	{
-		ForEach ($Item in $networks)
-		{
-			ForEach ($XSHost in $Script:XSHosts)
-               {
-				$pif = $Item.PIFs | Get-XenPIF -EA 0 | Where-Object { $XSHost.opaque_ref -in $_.host }
-				if ([String]::IsNullOrEmpty($pif))
-				{
-					$nic = ""
-					$vlan = ""
-					$autoAssign = "No"
-					$linkStatus = "<None>"
-					$mac = "-"
-				}
-				else
-				{
-					$nic = $pif.device.Replace("eth", "NIC ")
-					
-					If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
-					{
-						$vlan = "-"
-						$mac = $pif.MAC
-					}
-					Else
-					{
-						$vlan = "$($pif.VLAN)"
-						$mac = "-"
-					}
-					if ($Item.other_config["automatic"] -like $true)
-					{
-						$autoAssign = "Yes"
-					}
-					else
-					{
-						$autoAssign = "No"
-					}
-					
-					$pifMetrics = $pif.metrics | Get-XenPIFMetrics
-					if ($pifMetrics.carrier -like $true)
-					{
-						$linkStatus = "Connected"
-					}
-					else
-					{
-						$linkStatus = "Disconnected"
-					}
-				}
-				if (($XSHost.opaque_ref -eq $Script:XSPool.master.opaque_ref))
-				{
-					$hostIsPoolMaster = $true
-				}
-				else
-				{
-					$hostIsPoolMaster = $false
-				}
-				$XSNetworks += $Item | Select-Object -Property `
-				@{Name = 'XSHostname'; Expression = { $XSHost.name_label } },
-				@{Name = 'XSHostref'; Expression = { $XSHost.opaque_ref } },
-				@{Name = 'XSHostPoolMaster'; Expression = { $hostIsPoolMaster } },
-				@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
-				@{Name = 'Description'; Expression = { $_.name_description } },
-				@{Name = 'NIC'; Expression = { $nic } },
-				@{Name = 'VLAN'; Expression = { $vlan } },
-				@{Name = 'Auto'; Expression = { $autoAssign } },
-				@{Name = 'LinkStatus'; Expression = { $linkStatus } },
-				@{Name = 'MAC'; Expression = { $mac } },
-				@{Name = 'MTU'; Expression = { $item.MTU } },
-				@{Name = 'SRIOV'; Expression = { "" } }
-			}
-		}
-	}
-	$XSNetworks = @($XSNetworks | Sort-Object -Property XSHostname, Name)
-	$Script:XSPoolNetworks = $XSNetworks
+	GatherXSPoolNetworkingData
+	$XSNetworks = $Script:XSPoolNetworks
 	#Choose to use Pool Master data as original XenCenter pool data is more or less "random"
 	if ($NoPoolNetworking -eq $false) 
 	{
-		Write-Verbose "$(Get-Date -Format G): `t Pool Networking writing output"
+		#Write-Verbose "$(Get-Date -Format G): `t Pool Networking writing output"
 		$XSNetworks = $XSNetworks | Where-Object { $_.XSHostPoolMaster -eq $true }
 		$nrNetworking = $XSNetworks.Count
 		If ($MSWord -or $PDF)
@@ -6189,6 +6695,23 @@ Function OutputPoolNetworking
 			{
 				[System.Collections.Hashtable[]] $ScriptInformation = @()
 				$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrNetworking"; }
+				$Table = AddWordTable -Hashtable $ScriptInformation `
+					-Columns Data, Value `
+					-List `
+					-Format $wdTableGrid `
+					-AutoFit $wdAutoFitFixed;
+
+				## IB - Set the header row format
+				SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+				$Table.Columns.Item(1).Width = 150;
+				$Table.Columns.Item(2).Width = 350;
+
+				$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+				FindWordDocumentEnd
+				$Table = $Null
+				WriteWordLine 0 0 ""
 			}
 			If ($Text)
 			{
@@ -6199,12 +6722,23 @@ Function OutputPoolNetworking
 			{
 				$columnHeaders = @("Number of networks", ($htmlsilver -bor $htmlbold), "$nrNetworking", $htmlwhite)
 				$rowdata = @()
+				$msg = ""
+				$columnWidths = @("150", "350")
+				FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+				WriteHTMLLine 0 0 ""
 			}
 
+			$First = $True
 			ForEach ($Item in $XSNetworks)
 			{
+				Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool Network $($item.Name)"
 				If ($MSWord -or $PDF)
 				{
+					WriteWordLine 3 0 "Network $($item.Name)"
+					If(!$First)
+					{
+						[System.Collections.Hashtable[]] $ScriptInformation = @()
+					}
 					$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
 					$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
 					$ScriptInformation += @{ Data = "     NIC"; Value = $($item.NIC); }
@@ -6230,7 +6764,16 @@ Function OutputPoolNetworking
 				}
 				If ($HTML)
 				{
-					$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+					WriteHTMLLine 3 0 "Network $($item.Name)"
+					If(!$First)
+					{
+						$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+						$rowdata = @()
+					}
+					Else
+					{
+						$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+					}
 					$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
 					$rowdata += @(, ("     NIC", ($htmlsilver -bor $htmlbold), $($item.NIC), $htmlwhite))
 					$rowdata += @(, ("     VLAN", ($htmlsilver -bor $htmlbold), $($item.VLAN), $htmlwhite))
@@ -6240,42 +6783,188 @@ Function OutputPoolNetworking
 					$rowdata += @(, ("     MTU", ($htmlsilver -bor $htmlbold), $($item.MTU), $htmlwhite))
 					$rowdata += @(, ("     SRIOV", ($htmlsilver -bor $htmlbold), $($item.SRIOV), $htmlwhite))
 				}
-			}
-		
-			If ($MSWord -or $PDF)
-			{
-				$Table = AddWordTable -Hashtable $ScriptInformation `
-					-Columns Data, Value `
-					-List `
-					-Format $wdTableGrid `
-					-AutoFit $wdAutoFitFixed;
+				
+				If ($MSWord -or $PDF)
+				{
+					$Table = AddWordTable -Hashtable $ScriptInformation `
+						-Columns Data, Value `
+						-List `
+						-Format $wdTableGrid `
+						-AutoFit $wdAutoFitFixed;
 
-				## IB - Set the header row format
-				SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+					## IB - Set the header row format
+					SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-				$Table.Columns.Item(1).Width = 150;
-				$Table.Columns.Item(2).Width = 175;
+					$Table.Columns.Item(1).Width = 150;
+					$Table.Columns.Item(2).Width = 175;
 
-				$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+					$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
-				FindWordDocumentEnd
-				$Table = $Null
-				WriteWordLine 0 0 ""
-			}
-			If ($Text)
-			{
-				Line 0 ""
-			}
-			If ($HTML)
-			{
-				$msg = ""
-				$columnWidths = @("150", "200")
-				FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-				WriteHTMLLine 0 0 ""
+					FindWordDocumentEnd
+					$Table = $Null
+					WriteWordLine 0 0 ""
+				}
+				If ($Text)
+				{
+					Line 0 ""
+				}
+				If ($HTML)
+				{
+					$msg = ""
+					$columnWidths = @("150", "200")
+					FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+					WriteHTMLLine 0 0 ""
+				}
+
+				OutputPoolNetworkGeneral $item
+				OutputPoolNetworkCustomFields $item
+				OutputPoolNetworkNetworkSettings $item
+				$First = $False
 			}
 		}
-	} else {
+	}
+ else
+	{
 		Write-Verbose "$(Get-Date -Format G): `t Pool Networking skipped"
+	}
+}
+
+Function OutputPoolNetworkGeneral
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Network General"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 4 0 "Network General"
+	}
+	If ($Text)
+	{
+		Line 3 "Network General"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 4 0 "Network General"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($item.Description); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $($item.Folder); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($item.Tags); }
+	}
+	If ($Text)
+	{
+		Line 4 "Name       : " $($item.Name)
+		Line 4 "Description: " $($item.Description)
+		Line 4 "Folder     : " $($item.Folder)
+		Line 4 "Tags       : " $($item.Tags)
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 350;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "350")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolNetworkCustomFields
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Network Custom Fields"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 4 0 "Network Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 3 "Network Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 4 0 "Network Custom Fields"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolNetworkNetworkSettings
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Network Network Settings"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 4 0 "Network Network Settings"
+	}
+	If ($Text)
+	{
+		Line 3 "Network Network Settings"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 4 0 "Network Network Settings"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
 	}
 }
 
@@ -6743,7 +7432,7 @@ Function OutputPoolUsers
 	}
 
 }
-#endregion
+#endregion pool
 
 #region hosts
 Function ProcessHosts
@@ -6853,7 +7542,7 @@ Function OutputHostGeneralOverview
 
 	If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
 	{
-		$folderName = "None"
+		$folderName = "<None>"
 	}
 	Else
 	{
@@ -6867,6 +7556,15 @@ Function OutputHostGeneralOverview
 	ELse
 	{
 		$XSHostDescription = $XSHost.name_description
+	}
+	
+	If ($XSHost.enabled)
+	{
+		$XSHostenabled = "Yes"
+	}
+	Else
+	{
+		$XSHostenabled = "No"
 	}
 	
 	If ($MSWord -or $PDF)
@@ -6884,7 +7582,7 @@ Function OutputHostGeneralOverview
 		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", "); }
 		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
 		$ScriptInformation += @{ Data = "Pool master"; Value = $IAmThePoolMaster; }
-		$ScriptInformation += @{ Data = "Enabled"; Value = $XSHost.enabled.ToString(); }
+		$ScriptInformation += @{ Data = "Enabled"; Value = $XSHostenabled; }
 		$ScriptInformation += @{ Data = "iSCSI IQN"; Value = $XSHost.iscsi_iqn; }
 		$ScriptInformation += @{ Data = "Log destination"; Value = $LogLocation; }
 		$ScriptInformation += @{ Data = "Server uptime"; Value = $ServerUptimeString; }
@@ -6917,7 +7615,7 @@ Function OutputHostGeneralOverview
 		Line 2 "Tags`t`t`t: " "$($xtags -join ", ")"
 		Line 2 "Folder`t`t`t: " $folderName
 		Line 2 "Pool master`t`t: " $IAmThePoolMaster
-		Line 2 "Enabled`t`t`t: " $XSHost.enabled.ToString()
+		Line 2 "Enabled`t`t`t: " $XSHostenabled
 		Line 2 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
 		Line 2 "Log destination`t`t: " $LogLocation
 		Line 2 "Server uptime`t`t: " $ServerUptimeString
@@ -6938,7 +7636,7 @@ Function OutputHostGeneralOverview
 		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), "$folderName", $htmlwhite))
 		$rowdata += @(, ('Pool master', ($htmlsilver -bor $htmlbold), $IAmThePoolMaster, $htmlwhite))
-		$rowdata += @(, ("Enabled", ($htmlsilver -bor $htmlbold), $XSHost.enabled.ToString(), $htmlwhite))
+		$rowdata += @(, ("Enabled", ($htmlsilver -bor $htmlbold), $XSHostenabled, $htmlwhite))
 		$rowdata += @(, ("iSCSI IQN", ($htmlsilver -bor $htmlbold), $XSHost.iscsi_iqn, $htmlwhite))
 		$rowdata += @(, ("Log destination", ($htmlsilver -bor $htmlbold), $LogLocation, $htmlwhite))
 		$rowdata += @(, ("Server uptime", ($htmlsilver -bor $htmlbold), $ServerUptimeString, $htmlwhite))
@@ -6996,6 +7694,7 @@ Function OutputHostLicense
 	If ($MSWord -or $PDF)
 	{
 		$ScriptInformation += @{ Data = "Status"; Value = $licenseStatus; }
+		$ScriptInformation += @{ Data = "Expiry date"; Value = (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate); }
 		$ScriptInformation += @{ Data = "License"; Value = "$($XSHost.license_params["sku_marketing_name"])"; }
 		$ScriptInformation += @{ Data = "Number of Sockets"; Value = $($XSHost.license_params["sockets"]); }
 		$ScriptInformation += @{ Data = "License Server Address"; Value = "$($XSHost.license_server["address"])"; }
@@ -7004,6 +7703,7 @@ Function OutputHostLicense
 	If ($Text)
 	{
 		Line 3 "Status`t`t`t: " "$licenseStatus"
+		Line 3 "Expiry date`t`t: " (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate)
 		Line 3 "License`t`t`t: " "$($XSHost.license_params["sku_marketing_name"])"
 		Line 3 "Number of Sockets`t: " $($XSHost.license_params["sockets"])
 		Line 3 "License Server Address`t: " "$($XSHost.license_server["address"])"
@@ -7012,6 +7712,7 @@ Function OutputHostLicense
 	If ($HTML)
 	{
 		$columnHeaders = @("Status", ($htmlsilver -bor $htmlbold), $licenseStatus, $htmlwhite)
+		$rowdata += @(, ("Expiry date", ($htmlsilver -bor $htmlbold), (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate), $htmlwhite))
 		$rowdata += @(, ("License", ($htmlsilver -bor $htmlbold), $($XSHost.license_params["sku_marketing_name"]), $htmlwhite))
 		$rowdata += @(, ("Number of Sockets", ($htmlsilver -bor $htmlbold), "$($XSHost.license_params["sockets"])", $htmlwhite))
 		$rowdata += @(, ("License Server Address", ($htmlsilver -bor $htmlbold), $($XSHost.license_server["address"]), $htmlwhite))
@@ -7144,8 +7845,9 @@ Function OutputHostUpdates
 	#Select-Object name_label, version | `
 	#Sort-Object name_label
 	
-	$HostUpdates = $XSHost.updates 
-	$HostUpdates = $HostUpdates | Sort-Object opaque_ref
+	#$HostUpdates = $XSHost.updates 
+	$HostUpdates = $XSHost.updates | Get-XenPoolUpdate -EA 0 | Sort-Object name_label
+	#$HostUpdates = $HostUpdates | Sort-Object opaque_ref
 	
 	If ($MSWord -or $PDF)
 	{
@@ -7153,9 +7855,10 @@ Function OutputHostUpdates
 		
 		WriteWordLine 3 0 "Updates" 
 		
-		ForEach ($HostUpdate in $HostUpdates)
+		#ForEach ($HostUpdate in $HostUpdates)
+		ForEach ($Update in $HostUpdates)
 		{
-			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
+			#$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
 			$WordTableRowHash = @{ 
 				Update = "$($Update.name_label) (version $($Update.version))";
 			}
@@ -7179,12 +7882,13 @@ Function OutputHostUpdates
 	}
 	If ($Text)
 	{
-		Line 1 "Updates"
-		Line 2 "Applied`t: " ""
-		ForEach ($HostUpdate in $HostUpdates)
+		Line 2 "Updates"
+		Line 3 "Applied`t: " ""
+		#ForEach ($HostUpdate in $HostUpdates)
+		ForEach ($Update in $HostUpdates)
 		{
-			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
-			Line 3 "" "$($Update.name_label) (version $($Update.version))"
+			#$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
+			Line 4 "" "$($Update.name_label) (version $($Update.version))"
 		}
 
 		Line 0 ""
@@ -7194,9 +7898,10 @@ Function OutputHostUpdates
 		WriteHTMLLine 3 0 "Updates"
 		$rowdata = @()
 
-		ForEach ($HostUpdate in $HostUpdates)
+		#ForEach ($HostUpdate in $HostUpdates)
+		ForEach ($Update in $HostUpdates)
 		{
-			$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
+			#$Update = Get-XenPoolUpdate -Ref $HostUpdate.opaque_ref -EA 0 4>$Null
 			$rowdata += @(, (
 					"$($Update.name_label) (version $($Update.version))", $htmlwhite))
 		}
@@ -7313,30 +8018,7 @@ Function OutputHostMemoryOverview
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Memory Overview"
 
-	$XSHostMetrics = $XSHost.metrics | Get-XenHostMetrics
-	$memTotal = Convert-SizeToString -size $XSHostMetrics.memory_total -Decimal 1
-	$memFree = Convert-SizeToString -size $XSHostMetrics.memory_free -Decimal 1
-	$memoryText = "$memFree RAM available ($memTotal)"
-	$hostAllRunningVMs = @( $XSHost.resident_VMs | Get-XenVM | Sort-Object -Property name_label)
-	$hostRunningVMs = @($hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $false -and $_.power_state -like "running" })
-	$dom0VM = $hostAllRunningVMs | Where-Object { $_.is_control_domain -eq $true }
-	$vmText = @()
-	$vmMemoryUsed = [Int64]0
-	ForEach ($vm in $hostRunningVMs)
-	{
-		$vmText += '{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
-		$vmMemoryUsed = $vmMemoryUsed + $vm.memory_target
-	}
-
-	$memXSNum = $($dom0VM.memory_target + $XSHost.memory_overhead)
-	$memXS = Convert-SizeToString -size $memXSNum -Decimal 1
-	$memXSUsedNum = ($dom0VM.memory_target + $XSHost.memory_overhead + $vmMemoryUsed)
-	$memXSAvailableNum = ($XSHostMetrics.memory_total - $memXSUsedNum)
-	$memXSUsed = Convert-SizeToString -size $memXSUsedNum -Decimal 1
-	$memXSUsedPct = '{0}%' -f [Math]::Round($memXSUsedNum / ($XSHostMetrics.memory_total / 100))
-	$memXSAvailable = Convert-SizeToString -size $memXSAvailableNum -Decimal 1
-	$cdMemory = Convert-SizeToString -size $dom0VM.memory_target -Decimal 1
-
+	$XSHostMemory = @($Script:XSPoolMemories | Where-Object { $_.XSHostRef -like $XSHost.opaque_ref } )
 
 	If ($MSWord -or $PDF)
 	{
@@ -7364,35 +8046,27 @@ Function OutputHostMemoryOverview
 		$rowdata = @()
 	}
 	
+	$hostRunningVMs = @($XSHostMemory.VMData | Where-Object { $_.VMPowerState -eq "On" })
 	If ($MSWord -or $PDF)
 	{
-		$ScriptInformation += @{ Data = "Server"; Value = "$($memoryText)"; }
+		$ScriptInformation += @{ Data = "Server"; Value = "$($XSHostMemory.Server)"; }
 		$ScriptInformation += @{ Data = "VMs"; Value = "$($hostRunningVMs.Count)"; }
-		$vmText | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
-		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($memXS)"; }
-		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($cdMemory)"; }
-		$ScriptInformation += @{ Data = "Available memory"; Value = "$($memXSAvailable)"; }
-		$ScriptInformation += @{ Data = "Total max memory"; Value = "$($memXSUsed) ($memXSUsedPct of total memory)"; }
+		$hostRunningVMs | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_.VMText)"; } }
+		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
 	}
 	If ($Text)
 	{
-		Line 3 "Server`t`t`t: " "$($memoryText)"
+		Line 3 "Server`t`t`t: " "$($XSHostMemory.Server)"
 		Line 3 "VMs`t`t`t: " "$($hostRunningVMs.Count)"
-		$vmText | ForEach-Object { Line 6 "  $($_)" }
-		Line 3 "Citrix Hypervisor`t: " "$($memXS)"
-		Line 3 "Control domain memory`t: " "$($cdMemory)"
-		Line 3 "Available memory`t: " "$($memXSAvailable)"
-		Line 3 "Total max memory`t: " "$($memXSUsed) ($memXSUsedPct of total memory)"
+		$hostRunningVMs | ForEach-Object { Line 6 "  $($_.VMText)" }
+		Line 3 "Citrix Hypervisor`t: " "$($XSHostMemory.XenServerMemory)"
 	}
 	If ($HTML)
 	{
-		$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($memoryText)", $htmlwhite)
+		$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.Server)", $htmlwhite)
 		$rowdata += @(, ("VMs", ($htmlsilver -bor $htmlbold), "$($hostRunningVMs.Count)", $htmlwhite))
-		$vmText | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_)", $htmlwhite)) }
-		$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($memXS)", $htmlwhite))
-		$rowdata += @(, ("Control domain memory", ($htmlsilver -bor $htmlbold), "$($cdMemory)", $htmlwhite))
-		$rowdata += @(, ("Available memory", ($htmlsilver -bor $htmlbold), "$($memXSAvailable)", $htmlwhite))
-		$rowdata += @(, ("Total max memory", ($htmlsilver -bor $htmlbold), "$($memXSUsed) ($memXSUsedPct of total memory)", $htmlwhite))
+		$hostRunningVMs | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_.VMText)", $htmlwhite)) }
+		$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XenServerMemory)", $htmlwhite))
 	}
 	If ($MSWord -or $PDF)
 	{
@@ -7547,7 +8221,7 @@ Function OutputHostGeneral
 	
 	If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
 	{
-		$folderName = "None"
+		$folderName = "<None>"
 	}
 	Else
 	{
@@ -7565,6 +8239,7 @@ Function OutputHostGeneral
 	
 	If ($MSWord -or $PDF)
 	{
+		WriteWordLine 3 0 "General"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $XSHostDescription; }
@@ -7592,10 +8267,11 @@ Function OutputHostGeneral
 	}
 	If ($Text)
 	{
-		Line 2 "Description`t`t: " $XSHostDescription
-		Line 2 "Folder`t`t`t: " $folderName
-		Line 2 "Tags`t`t`t: " "$($xtags -join ", ")"
-		Line 2 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
+		Line 2 "General"
+		Line 3 "Description`t`t: " $XSHostDescription
+		Line 3 "Folder`t`t`t: " $folderName
+		Line 3 "Tags`t`t`t: " "$($xtags -join ", ")"
+		Line 3 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
 		Line 0 ""
 	}
 	If ($HTML)
@@ -7603,6 +8279,7 @@ Function OutputHostGeneral
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
+		WriteHTMLLine 3 0 "General"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $XSHost.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $XSHostDescription, $htmlwhite))
@@ -7810,8 +8487,7 @@ Function OutputHostAlerts
 	[double]$WhenDom0MemUsageExceeds = 0
 	[int32]$WhenDom0ForLongerThan = 0
 	
-	$dom0conf = Get-XenVM | `
-			Where-Object { $_.is_control_domain -and $_.domid -eq 0 -and $_.name_label -like "*$($XSHost.hostname)*" } | `
+	$dom0conf = GetXenVMsOnHost -XSHost $xshost -ControlDomain | `
 			Get-XenVMProperty -XenProperty OtherConfig
 	[xml]$XML = $dom0conf.perfmon
 
@@ -8018,6 +8694,66 @@ Function OutputHostAlerts
 Function OutputHostMultipathing
 {
 	Param([object]$XSHost)
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Multipathing"
+	}
+	If ($Text)
+	{
+		Line 2 "Multipathing"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Multipathing"
+	}
+	
+	If ($XSHost.multipathing)
+	{
+		$Multipathing = "Enabled"
+	}
+	Else
+	{
+		$Multipathing = "Disabled"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Multipathing"; Value = $Multipathing; }
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Multipathing: " $Multipathing
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Multipathing", ($htmlsilver -bor $htmlbold), $Multipathing, $htmlwhite)
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
 }
 
 Function OutputHostLogDestination
@@ -8384,21 +9120,31 @@ Function OutputHostGPUProperties
 	
 	$HostGPU = $XSHost.PGPUs | Get-XenPGPU
 	
-	If($XSHost.display.ToString() -eq "enabled" -and $HostGPU.dom0_access.ToString() -eq "enabled")
+	<#
+		This code is from the XenServer team
+	#>
+	If (
+		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::disable_on_reboot) ) -and
+		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::disable_on_reboot) )
+	)
 	{
 		$HostGPUTxt = "This server is currently using the integrated GPU"
 	}
-	ElseIf($XSHost.display.ToString() -eq "disable_on_reboot" -and $HostGPU.dom0_access.ToString() -eq "disable_on_reboot")
-	{
-		$HostGPUTxt = "This server is currently using the integrated GPUntil the next reboot"
-	}
-	ElseIf($XSHost.display.ToString() -eq "disabled" -and $HostGPU.dom0_access.ToString() -eq "disabled")
+	Else
 	{
 		$HostGPUTxt = "This server is currently not using the integrated GPU"
 	}
+
+	If (
+		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::enable_on_reboot) ) -and
+		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enable_on_reboot) )
+	)
+	{
+		$HostGPUTxt = "This server will use the integrated GPU on next reboot"
+	}
 	Else
 	{
-		$HostGPUTxt = "Unable to determine the host's GPU setting. Host.Display: $($XSHost.display.ToString()) - HostGPU.dom0_access: $($HostGPU.dom0_access.ToString())"
+		$HostGPUTxt = "This server will not use the integrated GPU on next reboot"
 	}
 	
 	If ($MSWord -or $PDF)
@@ -8427,7 +9173,7 @@ Function OutputHostGPUProperties
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-		$Table.Columns.Item(1).Width = 250;
+		$Table.Columns.Item(1).Width = 275;
 		$Table.Columns.Item(2).Width = 20;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -8443,7 +9189,7 @@ Function OutputHostGPUProperties
 	If ($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("250", "10")
+		$columnWidths = @("275", "10")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
@@ -8484,30 +9230,24 @@ Function OutputHostMemory
 	
 	If ($MSWord -or $PDF)
 	{
-		$ScriptInformation += @{ Data = "Server"; Value = "$($XSHostMemory.Server)"; }
-		$ScriptInformation += @{ Data = "VMs"; Value = "$($XSHostMemory.VMs)"; }
-		$XSHostMemory.VMTexts | ForEach-Object { $ScriptInformation += @{ Data = ""; Value = "$($_)"; } }
-		$ScriptInformation += @{ Data = "Citrix Hypervisor"; Value = "$($XSHostMemory.XenServerMemory)"; }
+		$ScriptInformation += @{ Data = "Total Memory"; Value = "$($XSHostMemory.TotalMemory)"; }
+		$ScriptInformation += @{ Data = "Currently used"; Value = "$($XSHostMemory.CurrentlyUsed)"; }
 		$ScriptInformation += @{ Data = "Control domain memory"; Value = "$($XSHostMemory.ControlDomainMemory)"; }
 		$ScriptInformation += @{ Data = "Available memory"; Value = "$($XSHostMemory.AvailableMemory)"; }
 		$ScriptInformation += @{ Data = "Total max memory"; Value = "$($XSHostMemory.TotalMaxMemory)"; }
 	}
 	If ($Text)
 	{
-		Line 3 "Server`t`t`t: " "$($XSHostMemory.Server)"
-		Line 3 "VMs`t`t`t: " "$($XSHostMemory.VMs)"
-		$XSHostMemory.VMTexts | ForEach-Object { Line 6 "  $($_)" }
-		Line 3 "Citrix Hypervisor`t: " "$($XSHostMemory.XenServerMemory)"
+		Line 3 "Total Memory`t`t: " "$($XSHostMemory.TotalMemory)"
+		Line 3 "Currently used`t`t: " "$($XSHostMemory.CurrentlyUsed)"
 		Line 3 "Control domain memory`t: " "$($XSHostMemory.ControlDomainMemory)"
 		Line 3 "Available memory`t: " "$($XSHostMemory.AvailableMemory)"
 		Line 3 "Total max memory`t: " "$($XSHostMemory.TotalMaxMemory)"
 	}
 	If ($HTML)
 	{
-		$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.Server)", $htmlwhite)
-		$rowdata += @(, ("VMs", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.VMs)", $htmlwhite))
-		$XSHostMemory.VMTexts | ForEach-Object { $rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "$($_)", $htmlwhite)) }
-		$rowdata += @(, ("Citrix Hypervisor", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.XenServerMemory)", $htmlwhite))
+		$columnHeaders = @("Total Memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMemory)", $htmlwhite)
+		$rowdata += @(, ("Currently used", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.CurrentlyUsed)", $htmlwhite))
 		$rowdata += @(, ("Control domain memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.ControlDomainMemory)", $htmlwhite))
 		$rowdata += @(, ("Available memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.AvailableMemory)", $htmlwhite))
 		$rowdata += @(, ("Total max memory", ($htmlsilver -bor $htmlbold), "$($XSHostMemory.TotalMaxMemory)", $htmlwhite))
@@ -8544,7 +9284,93 @@ Function OutputHostMemory
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
-		
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	
+	}
+	If ($Text)
+	{
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @( "", ($Script:htmlsb), "", ($Script:htmlsb)
+		)
+	}
+	foreach ($vm in @($XSHostMemory.VMData | Where-Object { $_.VMPowerState -eq "On" }))
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "VM Name"; Value = "$($vm.VMName)"; }
+			$ScriptInformation += @{ Data = "Power state"; Value = "$($vm.VMPowerState)"; }
+			$ScriptInformation += @{ Data = "Memory"; Value = "$($vm.VMMemory)"; }
+		}
+		If ($Text)
+		{
+			Line 3 "VM Name`t`t: " "$($vm.VMName)"
+			Line 3 "Power state`t: " "$($vm.VMPowerState)"
+			Line 3 "Memory`t`t: " "$($vm.VMMemory)"
+		}
+		If ($HTML)
+		{
+			$rowdata += @(, ("VM Name", ($htmlsilver -bor $htmlbold), "$($vm.VMName)", ($htmlsilver -bor $htmlbold)))
+			$rowdata += @(, ("Power state", ($htmlsilver -bor $htmlbold), "$($vm.VMPowerState)", $htmlwhite))
+			$rowdata += @(, ("Memory", ($htmlsilver -bor $htmlbold), "$($vm.VMMemory)", $htmlwhite))
+		}
+	}
+	foreach ($vm in @($XSHostMemory.VMData | Where-Object { $_.VMPowerState -eq "Off" }))
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "VM Name"; Value = "$($vm.VMName)"; }
+			$ScriptInformation += @{ Data = "Power state"; Value = "$($vm.VMPowerState)"; }
+			$ScriptInformation += @{ Data = "Memory"; Value = "$($vm.VMMemory)"; }
+		}
+		If ($Text)
+		{
+			Line 3 "VM Name`t`t: " "$($vm.VMName)"
+			Line 3 "Power state`t: " "$($vm.VMPowerState)"
+			Line 3 "Memory`t`t: " "$($vm.VMMemory)"
+		}
+		If ($HTML)
+		{
+			$rowdata += @(, ("VM Name", ($htmlsilver -bor $htmlbold), "$($vm.VMName)", ($htmlsilver -bor $htmlbold)))
+			$rowdata += @(, ("Power state", ($htmlsilver -bor $htmlbold), "$($vm.VMPowerState)", $htmlwhite))
+			$rowdata += @(, ("Memory", ($htmlsilver -bor $htmlbold), "$($vm.VMMemory)", $htmlwhite))
+		}
+	}
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+	
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+	
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 200;
+	
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+	
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "200")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}	
 }
 
 Function OutputHostStorage
@@ -8591,6 +9417,23 @@ Function OutputHostStorage
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
 			$ScriptInformation += @{ Data = "Number of storages"; Value = "$storageCount"; }
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -8601,12 +9444,23 @@ Function OutputHostStorage
 		{
 			$columnHeaders = @("Number of storages", ($htmlsilver -bor $htmlbold), "$storageCount", $htmlwhite)
 			$rowdata = @()
+			$msg = ""
+			$columnWidths = @("150", "350")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
 		}
 
+		$First = $True
 		ForEach ($Item in $XSHostStorages)
 		{
+			Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Storage $($item.Name)"
 			If ($MSWord -or $PDF)
 			{
+				WriteWordLine 4 0 "Storage $($item.Name)"
+				If(!$First)
+				{
+					[System.Collections.Hashtable[]] $ScriptInformation = @()
+				}
 				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
 				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
 				$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
@@ -8628,6 +9482,16 @@ Function OutputHostStorage
 			}
 			If ($HTML)
 			{
+				WriteHTMLLine 4 0 "Storage $($item.Name)"
+				If(!$First)
+				{
+					$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+					$rowdata = @()
+				}
+				Else
+				{
+					$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+				}
 				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
 				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
 				$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
@@ -8636,6 +9500,11 @@ Function OutputHostStorage
 				$rowdata += @(, ("     Size", ($htmlsilver -bor $htmlbold), $($item.Size), $htmlwhite))
 				$rowdata += @(, ("     Virtual allocation", ($htmlsilver -bor $htmlbold), $($item.VirtualAllocation), $htmlwhite))
 			}
+				
+			OutputHostStorageGeneral $item
+			OutputHostStorageCustomFields $item
+			OutputHostStorageAlerts $item
+			$First = $False
 		}
 		
 		If ($MSWord -or $PDF)
@@ -8672,6 +9541,167 @@ Function OutputHostStorage
 	}
 
 
+}
+
+Function OutputHostStorageGeneral
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Host Storage General"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Storage General"
+	}
+	If ($Text)
+	{
+		Line 4 "Storage General"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Storage General"
+	}
+
+	<#
+		DBG]: PS C:\Webster>> $Item
+
+
+		XSHostName        : XenServer2 (82)
+		XSHostRef         : OpaqueRef:6a7a73ec-bc9a-4f46-8872-45c0f9c2ed09
+		HostMaster        : True
+		Name              : DVD drives on XenServer2 (82)
+		Description       : Physical DVD drives
+		Type              : udev
+		Shared            : No
+		Usage             : 0% (0 B)
+		Tags              : <None>
+		Folder            : <None>
+		CustomFields      : 
+		Size              : 0 B
+		VirtualAllocation : 0 B
+		Attached          : True
+		AdditionalData    : {}
+		UUID              : 57afb9bb-651b-f107-99ef-5fea073079ef
+	#>
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($item.Description); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $($item.Folder); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($item.Tags); }
+	}
+	If ($Text)
+	{
+		Line 5 "Name       : " $($item.Name)
+		Line 5 "Description: " $($item.Description)
+		Line 5 "Folder     : " $($item.Folder)
+		Line 5 "Tags       : " $($item.Tags)
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 350;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "350")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputHostStorageCustomFields
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Host Storage Custom Fields"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Storage Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 4 "Storage Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Storage Custom Fields"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputHostStorageAlerts
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Host Storage Alerts"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Storage Alerts"
+	}
+	If ($Text)
+	{
+		Line 4 "Storage Alerts"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Storage Alerts"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
 }
 
 Function OutputHostNetworking
@@ -8716,6 +9746,23 @@ Function OutputHostNetworking
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
 			$ScriptInformation += @{ Data = "Number of networks"; Value = "$nrNetworking"; }
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -8726,12 +9773,23 @@ Function OutputHostNetworking
 		{
 			$columnHeaders = @("Number of networks", ($htmlsilver -bor $htmlbold), "$nrNetworking", $htmlwhite)
 			$rowdata = @()
+			$msg = ""
+			$columnWidths = @("150", "350")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
 		}
 
+		$First = $True
 		ForEach ($Item in $XSHostNetworks)
 		{
+			Write-Verbose "$(Get-Date -Format G): `t`tOutput Host Network $($item.Name)"
 			If ($MSWord -or $PDF)
 			{
+				WriteWordLine 4 0 "Network $($item.Name)"
+				If(!$First)
+				{
+					[System.Collections.Hashtable[]] $ScriptInformation = @()
+				}
 				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
 				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
 				$ScriptInformation += @{ Data = "     NIC"; Value = $($item.NIC); }
@@ -8757,7 +9815,16 @@ Function OutputHostNetworking
 			}
 			If ($HTML)
 			{
-				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+				WriteHTMLLine 4 0 "Network $($item.Name)"
+				If(!$First)
+				{
+					$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+					$rowdata = @()
+				}
+				Else
+				{
+					$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
+				}
 				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
 				$rowdata += @(, ("     NIC", ($htmlsilver -bor $htmlbold), $($item.NIC), $htmlwhite))
 				$rowdata += @(, ("     VLAN", ($htmlsilver -bor $htmlbold), $($item.VLAN), $htmlwhite))
@@ -8766,40 +9833,184 @@ Function OutputHostNetworking
 				$rowdata += @(, ("     MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
 				$rowdata += @(, ("     MTU", ($htmlsilver -bor $htmlbold), $($item.MTU), $htmlwhite))
 				$rowdata += @(, ("     SR-IOV", ($htmlsilver -bor $htmlbold), $($item.SRIOV), $htmlwhite))
+
+				If ($MSWord -or $PDF)
+				{
+					$Table = AddWordTable -Hashtable $ScriptInformation `
+						-Columns Data, Value `
+						-List `
+						-Format $wdTableGrid `
+						-AutoFit $wdAutoFitFixed;
+
+					## IB - Set the header row format
+					SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+					$Table.Columns.Item(1).Width = 150;
+					$Table.Columns.Item(2).Width = 175;
+
+					$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+					FindWordDocumentEnd
+					$Table = $Null
+					WriteWordLine 0 0 ""
+				}
+				If ($Text)
+				{
+					Line 0 ""
+				}
+				If ($HTML)
+				{
+					$msg = ""
+					$columnWidths = @("150", "200")
+					FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+					WriteHTMLLine 0 0 ""
+				}
+
+				OutputHostNetworkGeneral $item
+				OutputHostNetworkCustomFields $item
+				OutputHostNetworkNetworkSettings $item
+				$First = $False
 			}
 		}
-		
-		If ($MSWord -or $PDF)
-		{
-			$Table = AddWordTable -Hashtable $ScriptInformation `
-				-Columns Data, Value `
-				-List `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
+	}
+}
 
-			## IB - Set the header row format
-			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+Function OutputHostNetworkGeneral
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Host Network General"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Network General"
+	}
+	If ($Text)
+	{
+		Line 3 "Network General"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Network General"
+	}
 
-			$Table.Columns.Item(1).Width = 150;
-			$Table.Columns.Item(2).Width = 175;
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($item.Description); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $($item.Folder); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($item.Tags); }
+	}
+	If ($Text)
+	{
+		Line 4 "Name       : " $($item.Name)
+		Line 4 "Description: " $($item.Description)
+		Line 4 "Folder     : " $($item.Folder)
+		Line 4 "Tags       : " $($item.Tags)
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
 
-			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			FindWordDocumentEnd
-			$Table = $Null
-			WriteWordLine 0 0 ""
-		}
-		If ($Text)
-		{
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			$msg = ""
-			$columnWidths = @("150", "200")
-			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-			WriteHTMLLine 0 0 ""
-		}
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 350;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "350")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputHostNetworkCustomFields
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Host Network Custom Fields"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Network Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 3 "Network Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Network Custom Fields"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputHostNetworkNetworkSettings
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Host Network Network Settings"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Network Network Settings"
+	}
+	If ($Text)
+	{
+		Line 3 "Network Network Settings"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Network Network Settings"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
 	}
 }
 
@@ -8828,11 +10039,11 @@ Function OutputHostNICs
 				$linkStatus = "Connected"
 				If ([String]::IsNullOrEmpty($($pifMetrics.duplex)) -or $pifMetrics.duplex -like $false)
 				{
-					$nicDuplex = "Full"
+					$nicDuplex = "Half"
 				}
 				Else
 				{
-					$nicDuplex = "Half"
+					$nicDuplex = "Full"
 				}
 				If ($pifMetrics.speed -gt 0)
 				{
@@ -9049,7 +10260,6 @@ Function OutputHostGPU
 	}
 	Else
 	{
-		
 		If ($MSWord -or $PDF)
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
@@ -9158,7 +10368,291 @@ Function OutputHostGPU
 		}
 	}
 }
-#endregion
+#endregion hosts
+
+#region SharedStorage
+
+Function ProcessSharedStorage
+{
+	Write-Verbose "$(Get-Date -Format G): Process Shared Storages"
+	If ($MSWord -or $PDF)
+	{
+		$Selection.InsertNewPage()
+		WriteWordLine 1 0 "Shared Storages"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 0 "Shared Storages"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 1 0 "Shared Storages"
+	}
+	
+	$XSSharedStorages = $Script:XSPoolStorages | Where-Object { $_.Shared -eq "Yes" -and $_.PoolMaster -eq $true }
+
+	ForEach ($storage in $XSSharedStorages)
+	{
+		Write-Verbose "$(Get-Date -Format G): `tOutput Shared Storage $($storage.Name)"
+		OutputGeneralStorage $storage
+		OutputSharedStorageCustomFields $storage
+		OutputSharedStorageStatus $storage
+	}
+}
+
+Function OutputGeneralStorage
+{
+	Param([object]$Storage)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Shared Storage General"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 2 0 "General: $($storage.Name)"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($storage.Name); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($storage.Description); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($storage.Tags -join ", "); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $($storage.Folder); }
+		$ScriptInformation += @{ Data = "Type"; Value = $($storage.Type); }
+		$storage.AdditionalData.GetEnumerator() | ForEach-Object { $ScriptInformation += @{ Data = $_.Key; Value = $_.Value; } }
+		$ScriptInformation += @{ Data = "UUID"; Value = $($storage.UUID); }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(2).Width = 300;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 1 "General"
+		Line 2 "Name`t`t: " $($storage.Name)
+		Line 2 "Description`t: " $($storage.Description)
+		Line 2 "Tags`t`t: " $($storage.Tags)
+		Line 2 "Folder`t`t: " $($storage.Folder)
+		Line 2 "Type`t`t: " $($storage.Type)
+		$storage.AdditionalData.GetEnumerator() | ForEach-Object { Line 2 "$(Get-TextWithTabs 2 $_.Key): " $($_.Value) }
+		Line 2 "UUID`t`t: " $($storage.UUID)
+
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 2 0 "General: $($storage.Name)"
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($storage.Name), $htmlwhite)
+		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $($storage.Description), $htmlwhite))
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), $($storage.Tags), $htmlwhite))
+		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $($storage.Folder), $htmlwhite))
+		$rowdata += @(, ('Type', ($htmlsilver -bor $htmlbold), $($storage.Type), $htmlwhite))
+		$storage.AdditionalData.GetEnumerator() | ForEach-Object { $rowdata += @(, ($_.Key, ($htmlsilver -bor $htmlbold), $($_.Value), $htmlwhite)) }
+		$rowdata += @(, ('UUID', ($htmlsilver -bor $htmlbold), $($storage.UUID), $htmlwhite))
+		$msg = ""
+		$columnWidths = @("100", "300")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputSharedStorageCustomFields
+{
+	Param([object] $Storage)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Shared Storage Custom Fields"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 2 "Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Custom Fields"
+	}
+	
+	If ([String]::IsNullOrEmpty($Storage.CustomFields) -or $Storage.CustomFields.Count -eq 0)
+	{
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There are no Custom Fields for Storage $($Storage.Name))"
+		}
+		If ($Text)
+		{
+			Line 3 "There are no Custom Fields for Storage $($Storage.Name))"
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There are no Custom Fields for Storage $($Storage.Name))"
+		}
+	}
+	Else
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If ($Text)
+		{
+			#nothing
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+		}
+
+		[int]$cnt = -1
+		ForEach ($Item in $Storage.CustomFields)
+		{
+			$cnt++
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = $($Item.Name); Value = $Item.Value; }
+			}
+			If ($Text)
+			{
+				Line 3 "$($Item.Name): " $Item.Value
+			}
+			If ($HTML)
+			{
+				If ($cnt -eq 0)
+				{
+					$columnHeaders = @($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite)
+				}
+				Else
+				{
+					$rowdata += @(, ($($Item.Name), ($htmlsilver -bor $htmlbold), $Item.Value, $htmlwhite))
+				}
+			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 250;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("225", "225")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
+	}
+}
+
+Function OutputSharedStorageStatus
+{
+	Param([object]$Storage)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Shared Storage Status"
+
+	$storageStatusData = $Script:XSPoolStorages | Where-Object { $_.UUID -eq $Storage.UUID }
+
+	If ($False -in $storageStatusData.Attached)
+	{
+		$storageState = "Broken"
+	}
+	Else
+	{
+		$storageState = "OK"
+	}
+	$storageHostStatus = [hashtable]@{}
+	ForEach ($item in $storageStatusData)
+	{
+		If($item.Attached -eq $True)
+		{
+		$storageHostStatus.Add($item.XSHostName,"Connected")
+		}
+		Else
+		{
+			$storageHostStatus.Add($item.XSHostName,"Broken")
+		}
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Status"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "State"; Value = $storageState; }
+		$storageHostStatus.GetEnumerator() | ForEach-Object { $ScriptInformation += @{ Data = $_.Key; Value = $_.Value; } }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(2).Width = 300;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 1 "Status"
+		Line 2 "$(Get-TextWithTabs 3 "State"): " "$($storageState)"
+		$storageHostStatus.GetEnumerator() | ForEach-Object { Line 2 "$(Get-TextWithTabs 3 $_.Key): " $($_.Value) }
+
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Status"
+		$rowdata = @()
+		$columnHeaders = @("State", ($htmlsilver -bor $htmlbold), $storageState, $htmlwhite)
+		$storageHostStatus.GetEnumerator() | ForEach-Object { $rowdata += @(, ($_.Key, ($htmlsilver -bor $htmlbold), $($_.Value), $htmlwhite)) }
+		$msg = ""
+		$columnWidths = @("100", "300")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+#endregion SharedStorage
 
 #region VMs
 Function ProcessVMs
@@ -9181,10 +10675,12 @@ Function ProcessVMs
 	}
 	
 	$VMFirst = $True
-	ForEach ($VMName in $Script:VMNames)
+	$XenVMs = GetXenVMsOnHost -OnAllHosts | Sort-Object -Property name_label
+	#ForEach ($VMName in $Script:VMNames)
+	ForEach ($VM in $XenVMs)
 	{
-		Write-Verbose "$(Get-Date -Format G): `tOutput VM $($VMName.name_label)"
-		$VM = Get-XenVM -Name $VMName.name_label
+		Write-Verbose "$(Get-Date -Format G): `tOutput VM $($VM.name_label)"
+		#$VM = Get-XenVM -Name $VMName.name_label
 		$VMMetrics = $VM.guest_metrics | Get-XenVMGuestMetrics
 		if ([String]::IsNullOrEmpty($VMMetrics) -or [String]::IsNullOrEmpty($($VMMetrics.os_version)) -or $VMMetrics.os_version.Count -lt 1 -or [String]::IsNullOrEmpty($($VMMetrics.os_version.name)))
 		{
@@ -9195,7 +10691,9 @@ Function ProcessVMs
 			$VMOSName = $VMMetrics.os_version.name
 		}
 
-		$VMHostData = $VM.resident_on | Get-XenHost
+		#$VMHostData = $VM.resident_on | Get-XenHost
+		$VMHostData = $Script:XSHosts | Where-Object { $_.opaque_ref -like $VM.resident_on.opaque_ref }
+
 		if ([String]::IsNullOrEmpty($VMHostData) -or [String]::IsNullOrEmpty($($VMHostData.name_label)))
 		{
 			If ($VM.power_state -ne "Running")
@@ -10449,21 +11947,50 @@ Function OutputVMStorage
 		{
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
 			$ScriptInformation += @{ Data = "Number of storages"; Value = "$storageCount"; }
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
 			Line 3 "Number of storages: " "$storageCount"
+			Line 0 ""
 		}
 		If ($HTML)
 		{
 			$columnHeaders = @("Number of storages", ($htmlsilver -bor $htmlbold), "$storageCount", $htmlwhite)
 			$rowdata = @()
+			$msg = ""
+			$columnWidths = @("150", "350")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
 		}
 
+		$First = $True
 		ForEach ($Item in $storages)
 		{
+			Write-Verbose "$(Get-Date -Format G): `t`tOutput VM Storage $($item.Name)"
 			If ($MSWord -or $PDF)
 			{
+				WriteWordLine 4 0 "Storage $($item.Name)"
+				If(!$First)
+				{
+					[System.Collections.Hashtable[]] $ScriptInformation = @()
+				}
 				$ScriptInformation += @{ Data = "Position"; Value = $($item.Position); }
 				$ScriptInformation += @{ Data = "     Name"; Value = $($item.Name); }
 				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
@@ -10485,11 +12012,19 @@ Function OutputVMStorage
 				Line 4 "Priority`t`t: " $($item.Priority)
 				Line 4 "Active`t`t`t: " $($item.Active)
 				Line 4 "Device Path`t`t: " $($item.DevicePath)
-				Line 0 ""
 			}
 			If ($HTML)
 			{
-				$rowdata += @(, ("Position", ($htmlsilver -bor $htmlbold), $($item.Position), ($htmlsilver -bor $htmlbold)))
+				WriteHTMLLine 4 0 "Storage $($item.Name)"
+				If(!$First)
+				{
+					$columnHeaders = @("Position", ($htmlsilver -bor $htmlbold), $($item.Position), $htmlwhite)
+					$rowdata = @()
+				}
+				Else
+				{
+					$rowdata += @(, ("Position", ($htmlsilver -bor $htmlbold), $($item.Position), ($htmlsilver -bor $htmlbold)))
+				}
 				$rowdata += @(, ("     Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite))
 				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
 				$rowdata += @(, ("     SR", ($htmlsilver -bor $htmlbold), $($item.SR), $htmlwhite))
@@ -10498,43 +12033,218 @@ Function OutputVMStorage
 				$rowdata += @(, ("     Priority", ($htmlsilver -bor $htmlbold), $($item.Priority), $htmlwhite))
 				$rowdata += @(, ("     Active", ($htmlsilver -bor $htmlbold), $($item.Active), $htmlwhite))
 				$rowdata += @(, ("     Device Path", ($htmlsilver -bor $htmlbold), $($item.DevicePath), $htmlwhite))
+
+				If ($MSWord -or $PDF)
+				{
+					$Table = AddWordTable -Hashtable $ScriptInformation `
+						-Columns Data, Value `
+						-List `
+						-Format $wdTableGrid `
+						-AutoFit $wdAutoFitFixed;
+
+					## IB - Set the header row format
+					SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+					$Table.Columns.Item(1).Width = 150;
+					$Table.Columns.Item(2).Width = 350;
+
+					$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+					FindWordDocumentEnd
+					$Table = $Null
+					WriteWordLine 0 0 ""
+				}
+				If ($Text)
+				{
+					Line 0 ""
+				}
+				If ($HTML)
+				{
+					$msg = ""
+					$columnWidths = @("150", "350")
+					FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+					WriteHTMLLine 0 0 ""
+				}
+				
+				OutputVMStorageGeneral $item
+				OutputVMStorageCustomFields $item
+				OutputVMStorageSizeandLocation $item
+				OutputVMStorageVMInfo $item
+				$First = $False
 			}
 		}
-		
-		If ($MSWord -or $PDF)
-		{
-			$Table = AddWordTable -Hashtable $ScriptInformation `
-				-Columns Data, Value `
-				-List `
-				-Format $wdTableGrid `
-				-AutoFit $wdAutoFitFixed;
+	}
+}
 
-			## IB - Set the header row format
-			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-
-			$Table.Columns.Item(1).Width = 150;
-			$Table.Columns.Item(2).Width = 350;
-
-			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-
-			FindWordDocumentEnd
-			$Table = $Null
-			WriteWordLine 0 0 ""
-		}
-		If ($Text)
-		{
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			$msg = ""
-			$columnWidths = @("150", "350")
-			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-			WriteHTMLLine 0 0 ""
-		}
+Function OutputVMStorageGeneral
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput VM Storage General"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Storage General"
+	}
+	If ($Text)
+	{
+		Line 4 "Storage General"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Storage General"
 	}
 
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($item.Description); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $($item.Folder); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($item.Tags); }
+	}
+	If ($Text)
+	{
+		Line 5 "Name       : " $($item.Name)
+		Line 5 "Description: " $($item.Description)
+		Line 5 "Folder     : " $($item.Folder)
+		Line 5 "Tags       : " $($item.Tags)
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
+		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
 
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 350;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("150", "350")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputVMStorageCustomFields
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput VM Storage Custom Fields"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Storage Custom Fields"
+	}
+	If ($Text)
+	{
+		Line 4 "Storage Custom Fields"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Storage Custom Fields"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputVMStorageSizeandLocation
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput VM Storage Size and Location"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Storage Size and Location"
+	}
+	If ($Text)
+	{
+		Line 4 "Storage Size and Location"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Storage Size and Location"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputVMStorageVMInfo
+{
+	Param([object] $item)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput VM Storage VM Info"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 5 0 "Storage VM Info"
+	}
+	If ($Text)
+	{
+		Line 4 "Storage VM Info"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 5 0 "Storage VM Info"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 0 0 ""
+	}
 }
 
 Function OutputVMNIC
@@ -10611,6 +12321,7 @@ Function OutputVMNIC
 		If ($Text)
 		{
 			Line 3 "Number of NICs`t`t: " "$nrVIFs"
+			Line 0 ""
 		}
 		If ($HTML)
 		{
@@ -10630,12 +12341,12 @@ Function OutputVMNIC
 			}
 			If ($Text)
 			{
-				Line 3 "Device`t`t`t: " "$($Item.device)"
-				Line 3 "  MAC address`t`t: " "$($Item.MAC)"
-				Line 3 "  MAC autogenerated`t: " "$($Item.MACautogenerated)"
-				Line 3 "  Limit`t`t`t: " "$($Item.limit)"
-				Line 3 "  IP Address`t`t: " "$($Item.IPAddress)"
-				Line 3 "  Active`t`t: " "$($Item.Active)"
+				Line 3 "Device: " "$($Item.device)"
+				Line 4 "MAC address`t`t: " "$($Item.MAC)"
+				Line 4 "MAC autogenerated`t: " "$($Item.MACautogenerated)"
+				Line 4 "Limit`t`t`t: " "$($Item.limit)"
+				Line 4 "IP Address`t`t: " "$($Item.IPAddress)"
+				Line 4 "Active`t`t`t: " "$($Item.Active)"
 			}
 			If ($HTML)
 			{
@@ -10939,13 +12650,12 @@ Function OutputVMSnapshots
 					FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 					WriteHTMLLine 0 0 ""
 				}
-	
 			}
 		}
 	}
 }
 
-#endregion
+#endregion VMs
 
 #region script core
 #Script begins
@@ -10980,15 +12690,25 @@ If (("Pool" -in $Section) -or ("All" -in $Section))
 {
 	ProcessPool
 }
+Else 
+{
+	GatherXSPoolMemoryData
+	GatherXSPoolStorageData
+	GatherXSPoolNetworkingData
+}
 If (("Host" -in $Section) -or ("All" -in $Section))
 {
 	ProcessHosts
+}
+If (("SharedStorage" -in $Section) -or ("All" -in $Section))
+{
+	ProcessSharedStorage
 }
 If (("VM" -in $Section) -or ("All" -in $Section))
 {
 	ProcessVMs
 }
-#endregion
+#endregion script core
 
 #region finish script
 Write-Verbose "$(Get-Date -Format G): Finishing up document"
