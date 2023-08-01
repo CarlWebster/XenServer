@@ -596,7 +596,9 @@ Param(
 #       OutputHostStorageCustomFields
 #       OutputHostNetworkCustomFields
 #       OutputVMStorageCustomFields
-#   Changed OutputPoolStorage and OutputSharedStorageGeneral to add the Default SR value
+#   Changed OutputPoolStorage and OutputSharedStorageGeneral to add the Default SR value (JohnB)
+#   Expanded GatherXSPoolStorageData with Alert data (JohnB)
+#   Changed OutputPoolStorageAlerts to show alerts (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -4771,6 +4773,57 @@ Function GatherXSPoolStorageData
 		{
 			$folder = $sr.other_config["folder"]
 		}
+		$alerts = @()
+		If (-Not [String]::IsNullOrEmpty($($sr.other_config["perfmon"])))
+		{
+			try
+			{
+				$alerts += [PSCustomObject] @{
+					ID    = 0
+					Name  = "Generate storage throughput alerts"
+					Value = "Enabled"
+				}
+    
+				$repeatIntervalValue = '{0} minutes' -f ([xml]$sr.other_config.perfmon).config.variable["alarm_trigger_period"].value
+				$alerts += [PSCustomObject] @{
+					ID    = 1
+					Name  = "Alert repeat interval"
+					Value = $repeatIntervalValue
+				}
+
+				$throughput = [double]([xml]$sr.other_config.perfmon).config.variable["alarm_trigger_level"].value * 1024
+				$throughputValue = '{0} KB/s' -f $throughput
+				$alerts += [PSCustomObject] @{
+					ID    = 2
+					Name  = "When SR throughput for any host exceeds"
+					Value = $throughputValue
+				}
+    
+				$period = ([xml]$sr.other_config.perfmon).config.variable["alarm_auto_inhibit_period"].value / 60 / 60
+				$periodValue = '{0} minutes' -f $period
+				$alerts += [PSCustomObject] @{
+					ID    = 3
+					Name  = "For longer than"
+					Value = $periodValue
+				}
+			}
+			catch
+			{
+				$alerts = @([PSCustomObject] @{
+						ID    = 0
+						Name  = "Generate storage throughput alerts"
+						Value = "Unknown"
+					})
+			}
+		}
+		Else
+		{
+			$alerts = @([PSCustomObject] @{
+					ID    = 0
+					Name  = "Generate storage throughput alerts"
+					Value = "Disabled"
+				})
+		}
 
 		$XSPoolStorages += $sr | Select-Object -Property `
 		@{Name = 'XSHostName'; Expression = { $XSHostName } },
@@ -4785,6 +4838,7 @@ Function GatherXSPoolStorageData
 		@{Name = 'Folder'; Expression = { $folder } },
 		@{Name = 'CustomFields'; Expression = { Get-XSCustomFields $_.other_config } },
 		@{Name = 'DefaultSR'; Expression = { $defaultSR } },
+		@{Name = 'Alerts'; Expression = { $alerts } },
 		@{Name = 'Size'; Expression = { $size } },
 		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } },
 		@{Name = 'Attached'; Expression = { $item.currently_attached } },
@@ -6496,7 +6550,7 @@ Function OutputPoolStorage
 				
 				OutputPoolStorageGeneral $item
 				OutputPoolStorageCustomFields $item.CustomFields
-				OutputPoolStorageAlerts $item
+				OutputPoolStorageAlerts $item.Alerts
 				OutputPoolStorageReadCaching $item
 			}
 		}
@@ -6714,12 +6768,13 @@ Function OutputPoolStorageCustomFields
 
 Function OutputPoolStorageAlerts
 {
-	Param([object] $item)
+	Param([object] $Alerts)
 	
 	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Alerts"
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 4 0 "Storage Alerts"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
 	}
 	If ($Text)
 	{
@@ -6728,10 +6783,51 @@ Function OutputPoolStorageAlerts
 	If ($HTML)
 	{
 		WriteHTMLLine 4 0 "Storage Alerts"
+		$rowdata = @()
 	}
 
+
+	$Alerts = $Alerts | Sort-Object -Property ID
+	ForEach ($alert in $Alerts)
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = $($alert.Name); Value = $alert.Value; }
+		}
+		If ($Text)
+		{
+			Line 3 "$($alert.Name): " $alert.Value
+		}
+		If ($HTML)
+		{
+			If ($alert.ID -eq 0)
+			{
+				$columnHeaders = @($($alert.Name), ($htmlsilver -bor $htmlbold), $alert.Value, $htmlwhite)
+			}
+			Else
+			{
+				$rowdata += @(, ($($alert.Name), ($htmlsilver -bor $htmlbold), $($alert.Value), $htmlwhite))
+			}
+		}
+	}
 	If ($MSWord -or $PDF)
 	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 250;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
 		WriteWordLine 0 0 ""
 	}
 	If ($Text)
@@ -6740,8 +6836,16 @@ Function OutputPoolStorageAlerts
 	}
 	If ($HTML)
 	{
+		$msg = ""
+		$columnWidths = @("250", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
+
+
+
+
+
 }
 
 Function OutputPoolStorageReadCaching
