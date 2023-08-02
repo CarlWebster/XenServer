@@ -599,6 +599,7 @@ Param(
 #   Changed OutputPoolStorage and OutputSharedStorageGeneral to add the Default SR value (JohnB)
 #   Expanded GatherXSPoolStorageData with Alert data (JohnB)
 #   Changed OutputPoolStorageAlerts to show alerts (JohnB)
+#   Changed OutputHostStorageAlerts to show alerts (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -6841,11 +6842,6 @@ Function OutputPoolStorageAlerts
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
-
-
-
-
-
 }
 
 Function OutputPoolStorageReadCaching
@@ -9812,7 +9808,7 @@ Function OutputHostStorage
 				
 			OutputHostStorageGeneral $item
 			OutputHostStorageCustomFields $item.CustomFields
-			OutputHostStorageAlerts $item
+			OutputHostStorageAlerts $item.Alerts
 			$First = $False
 		}
 		
@@ -9848,8 +9844,6 @@ Function OutputHostStorage
 			WriteHTMLLine 0 0 ""
 		}
 	}
-
-
 }
 
 Function OutputHostStorageGeneral
@@ -10059,24 +10053,66 @@ Function OutputHostStorageCustomFields
 
 Function OutputHostStorageAlerts
 {
-	Param([object] $item)
+	Param([object] $Alerts)
 	
 	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Host Storage Alerts"
 	If ($MSWord -or $PDF)
 	{
-		WriteWordLine 5 0 "Storage Alerts"
+		WriteWordLine 4 0 "Storage Alerts"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
 	}
 	If ($Text)
 	{
-		Line 4 "Storage Alerts"
+		Line 3 "Storage Alerts"
 	}
 	If ($HTML)
 	{
-		WriteHTMLLine 5 0 "Storage Alerts"
+		WriteHTMLLine 4 0 "Storage Alerts"
+		$rowdata = @()
 	}
 
+
+	$Alerts = $Alerts | Sort-Object -Property ID
+	ForEach ($alert in $Alerts)
+	{
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = $($alert.Name); Value = $alert.Value; }
+		}
+		If ($Text)
+		{
+			Line 3 "$($alert.Name): " $alert.Value
+		}
+		If ($HTML)
+		{
+			If ($alert.ID -eq 0)
+			{
+				$columnHeaders = @($($alert.Name), ($htmlsilver -bor $htmlbold), $alert.Value, $htmlwhite)
+			}
+			Else
+			{
+				$rowdata += @(, ($($alert.Name), ($htmlsilver -bor $htmlbold), $($alert.Value), $htmlwhite))
+			}
+		}
+	}
 	If ($MSWord -or $PDF)
 	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 250;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
 		WriteWordLine 0 0 ""
 	}
 	If ($Text)
@@ -10085,6 +10121,9 @@ Function OutputHostStorageAlerts
 	}
 	If ($HTML)
 	{
+		$msg = ""
+		$columnWidths = @("250", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
 }
