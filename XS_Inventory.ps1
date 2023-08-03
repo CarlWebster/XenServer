@@ -600,6 +600,7 @@ Param(
 #   Expanded GatherXSPoolStorageData with Alert data (JohnB)
 #   Changed OutputPoolStorageAlerts to show alerts (JohnB)
 #   Changed OutputHostStorageAlerts to show alerts (JohnB)
+#   Changed OutputHostStorageAlerts to show alerts (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -4917,7 +4918,55 @@ Function GatherXSPoolNetworkingData
 				{
 					$folder = $item.other_config["folder"]
 				}
-		
+				if ([String]::IsNullOrEmpty($pif))
+				{
+					$ipConfig = [PSCustomObject]@{
+						IPConfigured       = $false
+						Management         = $false
+						Mode               = "none"
+						ModeIPv6           = "none"
+						PrimaryAddressType = "none"
+						IP                 = ""
+						Netmask            = ""
+						Gateway            = ""
+						IPv6               = ""
+						ipv6_gateway       = ""
+						DNS                = ""
+					}
+				}
+				Else
+				{
+					$ipConfig = [PSCustomObject]@{
+						IPConfigured       = $false
+						Management         = $pif.management
+						Mode               = $pif.ip_configuration_mode
+						ModeIPv6           = $pif.ipv6_configuration_mode
+						PrimaryAddressType = $pif.primary_address_type
+						IP                 = ""
+						Netmask            = ""
+						Gateway            = ""
+						IPv6               = ""
+						ipv6_gateway       = ""
+						DNS                = ""
+					}
+					If ($ipConfig.Mode -notlike "none")
+					{
+						$ipConfig.IPConfigured = $true
+						$ipConfig.Management = $pif.management
+						$ipConfig.Mode = $pif.ip_configuration_mode
+						$ipConfig.IP = $pif.IP
+						$ipConfig.Netmask = $pif.netmask
+						$ipConfig.Gateway = $pif.gateway
+						$ipConfig.DNS = $pif.DNS
+					}
+					If ($ipConfig.ModeIPv6 -notlike "none")
+					{
+					
+						$ipConfig.IPConfigured = $true
+						$ipConfig.IPv6 = $pif.IPv6
+						$ipConfig.IPv6Gateway = $pif.ipv6_gateway
+					}
+				}	
 				$XSNetworks += $Item | Select-Object -Property `
 				@{Name = 'XSHostname'; Expression = { $XSHost.name_label } },
 				@{Name = 'XSHostref'; Expression = { $XSHost.opaque_ref } },
@@ -4933,6 +4982,7 @@ Function GatherXSPoolNetworkingData
 				@{Name = 'LinkStatus'; Expression = { $linkStatus } },
 				@{Name = 'MAC'; Expression = { $mac } },
 				@{Name = 'MTU'; Expression = { $item.MTU } },
+				@{Name = 'IPConfig'; Expression = { $ipConfig } },
 				@{Name = 'SRIOV'; Expression = { "" } }
 			}
 		}
@@ -7261,6 +7311,48 @@ Function OutputPoolNetworkNetworkSettings
 
 	If ($MSWord -or $PDF)
 	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	}
+	If ($Text)
+	{
+		#nothing
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		$ScriptInformation += @{ Data = "Automatically add this network to new virtual machines"; Value = $Item.Auto; }
+	}
+	If ($Text)
+	{
+		Line 3 "Automatically add this network to new virtual machines: " $Item.Auto
+	}
+	If ($HTML)
+	{
+		$columnHeaders = @("Automatically add this network to new virtual machines", ($htmlsilver -bor $htmlbold), $Item.Auto, $htmlwhite)
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 350;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
 		WriteWordLine 0 0 ""
 	}
 	If ($Text)
@@ -7269,6 +7361,9 @@ Function OutputPoolNetworkNetworkSettings
 	}
 	If ($HTML)
 	{
+		$msg = ""
+		$columnWidths = @("350", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
 }
@@ -10502,6 +10597,48 @@ Function OutputHostNetworkNetworkSettings
 
 	If ($MSWord -or $PDF)
 	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+	}
+	If ($Text)
+	{
+		#nothing
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		$ScriptInformation += @{ Data = "Automatically add this network to new virtual machines"; Value = $Item.Auto; }
+	}
+	If ($Text)
+	{
+		Line 3 "Automatically add this network to new virtual machines: " $Item.Auto
+	}
+	If ($HTML)
+	{
+		$columnHeaders = @("Automatically add this network to new virtual machines", ($htmlsilver -bor $htmlbold), $Item.Auto, $htmlwhite)
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 350;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
 		WriteWordLine 0 0 ""
 	}
 	If ($Text)
@@ -10510,6 +10647,9 @@ Function OutputHostNetworkNetworkSettings
 	}
 	If ($HTML)
 	{
+		$msg = ""
+		$columnWidths = @("350", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
 }
