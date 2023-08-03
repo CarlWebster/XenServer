@@ -601,6 +601,8 @@ Param(
 #   Changed OutputPoolStorageAlerts to show alerts (JohnB)
 #   Changed OutputHostStorageAlerts to show alerts (JohnB)
 #   Changed OutputHostStorageAlerts to show alerts (JohnB)
+#   Changed GatherXSPoolNetworkingData to add IP information (JohnB)
+#   Created function OutputPoolNetworkIPAddressConfiguration (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -4863,6 +4865,11 @@ Function GatherXSPoolNetworkingData
 			ForEach ($XSHost in $Script:XSHosts)
 			{
 				$pif = $Item.PIFs | Get-XenPIF -EA 0 | Where-Object { $XSHost.opaque_ref -in $_.host }
+				$name = $item.name_label
+				If ($item.name_label -like "Pool-wide network associated with*")
+				{
+					$name = 'Network {0}' -f $item.name_label.Replace("Pool-wide network associated with", $null).Replace("eth", $null)
+				}
 				if ([String]::IsNullOrEmpty($pif))
 				{
 					$nic = ""
@@ -4872,7 +4879,7 @@ Function GatherXSPoolNetworkingData
 				}
 				else
 				{
-					$nic = $pif.device.Replace("eth", "NIC ")
+					$nic = 'NIC {0}' -f $pif.device.Replace("eth", "")
 					
 					If ([String]::IsNullOrEmpty($($pif.VLAN)) -or ($pif.VLAN -lt 0))
 					{
@@ -4922,10 +4929,11 @@ Function GatherXSPoolNetworkingData
 				{
 					$ipConfig = [PSCustomObject]@{
 						IPConfigured       = $false
+						Name               = ""
 						Management         = $false
-						Mode               = "none"
-						ModeIPv6           = "none"
-						PrimaryAddressType = "none"
+						Mode               = "None"
+						ModeIPv6           = "None"
+						PrimaryAddressType = "None"
 						IP                 = ""
 						Netmask            = ""
 						Gateway            = ""
@@ -4938,10 +4946,11 @@ Function GatherXSPoolNetworkingData
 				{
 					$ipConfig = [PSCustomObject]@{
 						IPConfigured       = $false
-						Management         = $pif.management
-						Mode               = $pif.ip_configuration_mode
-						ModeIPv6           = $pif.ipv6_configuration_mode
-						PrimaryAddressType = $pif.primary_address_type
+						Name               = ""
+						Management         = "$($pif.management)"
+						Mode               = "$($pif.ip_configuration_mode)"
+						ModeIPv6           = "$($pif.ipv6_configuration_mode)"
+						PrimaryAddressType = "$($pif.primary_address_type)"
 						IP                 = ""
 						Netmask            = ""
 						Gateway            = ""
@@ -4949,20 +4958,33 @@ Function GatherXSPoolNetworkingData
 						ipv6_gateway       = ""
 						DNS                = ""
 					}
+					If ($pif.management) 
+					{
+						$mgtName = "Management"
+					}
+					ElseIf (-Not [String]::IsNullOrEmpty($($pif.other_config["management_purpose"])))
+					{
+						$mgtName = $pif.other_config["management_purpose"]
+					}
+					Else
+					{
+						$mgtName = "Unknown"
+					}
 					If ($ipConfig.Mode -notlike "none")
 					{
 						$ipConfig.IPConfigured = $true
+						$ipConfig.Name = $mgtName
 						$ipConfig.Management = $pif.management
-						$ipConfig.Mode = $pif.ip_configuration_mode
 						$ipConfig.IP = $pif.IP
 						$ipConfig.Netmask = $pif.netmask
 						$ipConfig.Gateway = $pif.gateway
 						$ipConfig.DNS = $pif.DNS
 					}
-					If ($ipConfig.ModeIPv6 -notlike "none")
+					If ($ipConfig.ModeIPv6 -notlike "None")
 					{
 					
 						$ipConfig.IPConfigured = $true
+						$ipConfig.Name = $mgtName
 						$ipConfig.IPv6 = $pif.IPv6
 						$ipConfig.IPv6Gateway = $pif.ipv6_gateway
 					}
@@ -4974,7 +4996,7 @@ Function GatherXSPoolNetworkingData
 				@{Name = 'CustomFields'; Expression = { Get-XSCustomFields $_.other_config } },
 				@{Name = 'Folder'; Expression = { $folder } },
 				@{Name = 'Tags'; Expression = { Get-XSTags $item } },
-				@{Name = 'Name'; Expression = { $item.name_label.Replace("Pool-wide network associated with eth", "Network ") } },
+				@{Name = 'Name'; Expression = { $name } },
 				@{Name = 'Description'; Expression = { $_.name_description } },
 				@{Name = 'NIC'; Expression = { $nic } },
 				@{Name = 'VLAN'; Expression = { $vlan } },
@@ -7099,7 +7121,11 @@ Function OutputPoolNetworking
 				OutputPoolNetworkNetworkSettings $item
 				$First = $False
 			}
+
 		}
+		$networkIPs = @($Script:XSPoolNetworks | Where-Object { $_.IPConfig.IPConfigured -eq $true }) | Sort-Object -Property XSHostname, NIC, Name
+		OutputPoolNetworkIPAddressConfiguration $networkIPs
+
 	}
 	else
 	{
@@ -7365,6 +7391,111 @@ Function OutputPoolNetworkNetworkSettings
 		$columnWidths = @("350", "100")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputPoolNetworkIPAddressConfiguration
+{
+	Param([object] $IPConfigurations)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Network IP Address Configuration"
+	
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Network IP Address Configuration"
+	}
+	If ($Text)
+	{
+		Line 3 "Network IP Address Configuration"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Network IP Address Configuration"
+	}
+
+	Foreach ($ipConfig in $IPConfigurations)
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If ($Text)
+		{
+			#nothing
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+		}
+
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Server"; Value = $ipConfig.XSHostname; }
+			$ScriptInformation += @{ Data = "Interface"; Value = $ipConfig.IPConfig.Name; }
+			$ScriptInformation += @{ Data = "Network"; Value = $ipConfig.Name; }
+			$ScriptInformation += @{ Data = "NIC"; Value = $ipConfig.NIC; }
+			$ScriptInformation += @{ Data = "IP Setup"; Value = $ipConfig.IPConfig.Mode; }
+			$ScriptInformation += @{ Data = "IP Address"; Value = $ipConfig.IPConfig.IP; }
+			$ScriptInformation += @{ Data = "Subnet mask"; Value = $ipConfig.IPConfig.Netmask; }
+			$ScriptInformation += @{ Data = "Gateway"; Value = $ipConfig.IPConfig.Gateway; }
+			$ScriptInformation += @{ Data = "DNS"; Value = $ipConfig.IPConfig.DNS; }
+		}
+		If ($Text)
+		{
+			Line 3 "Server         : " $ipConfig.XSHostname
+			Line 3 "  Interface    : " $ipConfig.IPConfig.Name
+			Line 3 "  Network      : " $ipConfig.Name
+			Line 3 "  NIC          : " $ipConfig.NIC
+			Line 3 "  IP Setup     : " $ipConfig.IPConfig.Mode
+			Line 3 "  IP Address   : " $ipConfig.IPConfig.IP
+			Line 3 "  Subnet mask  : " $ipConfig.IPConfig.Netmask
+			Line 3 "  Gateway      : " $ipConfig.IPConfig.Gateway
+			Line 3 "  DNS          : " $ipConfig.IPConfig.DNS
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Server", ($htmlsilver -bor $htmlbold), $ipConfig.XSHostname, $htmlwhite)
+			$rowdata += @(, ("     Interface", ($htmlsilver -bor $htmlbold), $ipConfig.IPConfig.Name, $htmlwhite))
+			$rowdata += @(, ("     Network", ($htmlsilver -bor $htmlbold), $ipConfig.Name, $htmlwhite))
+			$rowdata += @(, ("     NIC", ($htmlsilver -bor $htmlbold), $ipConfig.NIC, $htmlwhite))
+			$rowdata += @(, ("     IP Setup", ($htmlsilver -bor $htmlbold), $ipConfig.IPConfig.Mode, $htmlwhite))
+			$rowdata += @(, ("     IP Address", ($htmlsilver -bor $htmlbold), $ipConfig.IPConfig.IP, $htmlwhite))
+			$rowdata += @(, ("     Subnet mask", ($htmlsilver -bor $htmlbold), $ipConfig.IPConfig.Netmask, $htmlwhite))
+			$rowdata += @(, ("     Gateway", ($htmlsilver -bor $htmlbold), $ipConfig.IPConfig.Gateway, $htmlwhite))
+			$rowdata += @(, ("     DNS", ($htmlsilver -bor $htmlbold), $ipConfig.IPConfig.DNS, $htmlwhite))
+		}
+	
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 200;
+			$Table.Columns.Item(2).Width = 250;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("200", "250")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
 	}
 }
 
