@@ -603,6 +603,7 @@ Param(
 #   Changed OutputHostStorageAlerts to show alerts (JohnB)
 #   Changed GatherXSPoolNetworkingData to add IP information (JohnB)
 #   Created function OutputPoolNetworkIPAddressConfiguration (JohnB)
+#   Changed function OutputPoolStorageReadCaching to show data when applicable (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -4700,6 +4701,7 @@ Function GatherXSPoolStorageData
 		$XSHostName = $XSHost.name_label
 		$additionalData = [hashtable]@{}
 		$sr = $item.SR | Get-XenSR -EA 0
+		$sm = Get-XenSM | Where-Object { $_.type -eq $sr.type }
 
 		$description = $($sr.name_description)
 		If ($sr.name_label -like "Removable storage" -or `
@@ -4828,6 +4830,18 @@ Function GatherXSPoolStorageData
 					Value = "Disabled"
 				})
 		}
+		$readCache = [PSCustomObject] @{
+			ReadCacheSupport = $false
+			CacheEnabled     = $false
+		}
+		If ($sm.features.ContainsKey("VDI_READ_CACHING"))
+		{
+			$readCache.ReadCacheSupport = $true
+			If ($sr.other_config.ContainsKey("o_direct") -eq $false -or $sr.other_config["o_direct"] -eq $false)
+			{
+				$readCache.CacheEnabled = $true
+			}
+		}
 
 		$XSPoolStorages += $sr | Select-Object -Property `
 		@{Name = 'XSHostName'; Expression = { $XSHostName } },
@@ -4847,6 +4861,7 @@ Function GatherXSPoolStorageData
 		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } },
 		@{Name = 'Attached'; Expression = { $item.currently_attached } },
 		@{Name = 'AdditionalData'; Expression = { $additionalData } },
+		@{Name = 'ReadCache'; Expression = { $readCache } },
 		@{Name = 'UUID'; Expression = { $_.uuid } }
 	}
 	$Script:XSPoolStorages = @($XSPoolStorages | Sort-Object -Property XSHostName, Name)
@@ -6921,30 +6936,83 @@ Function OutputPoolStorageReadCaching
 	Param([object] $item)
 	
 	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Read Caching"
-	If ($MSWord -or $PDF)
+	If ($item.ReadCache.ReadCacheSupport -eq $true)
 	{
-		WriteWordLine 4 0 "Storage Read Caching"
-	}
-	If ($Text)
-	{
-		Line 3 "Storage Read Caching"
-	}
-	If ($HTML)
-	{
-		WriteHTMLLine 4 0 "Storage Read Caching"
-	}
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 4 0 "Storage Read Caching"
+		}
+		If ($Text)
+		{
+			Line 3 "Storage Read Caching"
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 4 0 "Storage Read Caching"
+		}
 
-	If ($MSWord -or $PDF)
-	{
-		WriteWordLine 0 0 ""
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+		}
+		If ($Text)
+		{
+			#nothing
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+		}
+
+		If ($MSWord -or $PDF)
+		{
+			$ScriptInformation += @{ Data = "Read Caching"; Value = "$($item.ReadCache.CacheEnabled)"; }
+		}
+		If ($Text)
+		{
+			Line 3 "Read Caching: " "$($item.ReadCache.CacheEnabled)"
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Read Caching", ($htmlsilver -bor $htmlbold), "$($item.ReadCache.CacheEnabled)", $htmlwhite)
+			$rowdata = @()
+		}
+
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 100;
+			$Table.Columns.Item(2).Width = 100;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("100", "100")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
+		}
 	}
-	If ($Text)
+	Else
 	{
-		Line 0 ""
-	}
-	If ($HTML)
-	{
-		WriteHTMLLine 0 0 ""
+		Write-Verbose "$(Get-Date -Format G): `t`t`tRead Caching skipped, not present"
 	}
 }
 
