@@ -604,6 +604,7 @@ Param(
 #   Changed GatherXSPoolNetworkingData to add IP information (JohnB)
 #   Created function OutputPoolNetworkIPAddressConfiguration (JohnB)
 #   Changed function OutputPoolStorageReadCaching to show data when applicable (JohnB)
+#   Changed function OutputPoolStorageReadCaching to show Enabled/Disabled, was True/False (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -4832,14 +4833,14 @@ Function GatherXSPoolStorageData
 		}
 		$readCache = [PSCustomObject] @{
 			ReadCacheSupport = $false
-			CacheEnabled     = $false
+			Cache     = "Disabled"
 		}
 		If ($sm.features.ContainsKey("VDI_READ_CACHING"))
 		{
 			$readCache.ReadCacheSupport = $true
 			If ($sr.other_config.ContainsKey("o_direct") -eq $false -or $sr.other_config["o_direct"] -eq $false)
 			{
-				$readCache.CacheEnabled = $true
+				$readCache.Cache = "Enabled"
 			}
 		}
 
@@ -6935,9 +6936,10 @@ Function OutputPoolStorageReadCaching
 {
 	Param([object] $item)
 	
-	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Read Caching"
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Read Caching => $($item.ReadCache)"
 	If ($item.ReadCache.ReadCacheSupport -eq $true)
 	{
+		
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 4 0 "Storage Read Caching"
@@ -6966,15 +6968,15 @@ Function OutputPoolStorageReadCaching
 
 		If ($MSWord -or $PDF)
 		{
-			$ScriptInformation += @{ Data = "Read Caching"; Value = "$($item.ReadCache.CacheEnabled)"; }
+			$ScriptInformation += @{ Data = "Read Caching"; Value = "$($item.ReadCache.Cache)"; }
 		}
 		If ($Text)
 		{
-			Line 3 "Read Caching: " "$($item.ReadCache.CacheEnabled)"
+			Line 3 "Read Caching: " "$($item.ReadCache.Cache)"
 		}
 		If ($HTML)
 		{
-			$columnHeaders = @("Read Caching", ($htmlsilver -bor $htmlbold), "$($item.ReadCache.CacheEnabled)", $htmlwhite)
+			$columnHeaders = @("Read Caching", ($htmlsilver -bor $htmlbold), "$($item.ReadCache.Cache)", $htmlwhite)
 			$rowdata = @()
 		}
 
