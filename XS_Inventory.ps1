@@ -607,6 +607,7 @@ Param(
 #   Changed function OutputPoolStorageReadCaching to show Enabled/Disabled, was True/False (JohnB)
 #   Fixed bug in OutputVMNIC this function now collects IP addresses the right way (JohnB)
 #   Fixed bug in GatherXSPoolStorageData this function now collects Alerts the right way (JohnB)
+#   Changed GatherXSPoolNetworkingData to add SRIOV information (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -4944,6 +4945,7 @@ Function GatherXSPoolNetworkingData
 				{
 					$folder = $item.other_config["folder"]
 				}
+				$sriov = "No"
 				if ([String]::IsNullOrEmpty($pif))
 				{
 					$ipConfig = [PSCustomObject]@{
@@ -5007,7 +5009,36 @@ Function GatherXSPoolNetworkingData
 						$ipConfig.IPv6 = $pif.IPv6
 						$ipConfig.IPv6Gateway = $pif.ipv6_gateway
 					}
-				}	
+					
+					If ([String]::IsNullOrEmpty($($pif.sriov_logical_PIF_of)))
+					{
+						
+						$vlan = @($pif.VLAN_master_of | Get-XenVLAN)
+						If ($vlan.Count -gt 0)
+						{
+							$vlanPIFs = $vlan[0].tagged_PIF | Get-XenPIF
+							If (-Not [String]::IsNullOrEmpty($($vlanPIFs.sriov_logical_PIF_of)))
+							{
+								$sriov = "Yes"
+								$sriovPIF = $vlanPIFs.sriov_logical_PIF_of | Get-XenNetworkSriov | Select-Object -First 1
+								If ($sriovPIF[0].requires_reboot)
+								{
+									$sriov = "Yes (Host needs reboot)"
+								}
+							}
+						}
+					}
+					Elseif ($pif.sriov_logical_PIF_of)
+					{
+						$sriov = "Yes"
+						$sriovPIF = $pif.sriov_logical_PIF_of | Get-XenNetworkSriov | Select-Object -First 1
+						If ($sriovPIF.requires_reboot)
+						{
+							$sriov = "Yes (Host needs reboot)"
+						}
+					}
+				}
+
 				$XSNetworks += $Item | Select-Object -Property `
 				@{Name = 'XSHostname'; Expression = { $XSHost.name_label } },
 				@{Name = 'XSHostref'; Expression = { $XSHost.opaque_ref } },
@@ -5024,7 +5055,7 @@ Function GatherXSPoolNetworkingData
 				@{Name = 'MAC'; Expression = { $mac } },
 				@{Name = 'MTU'; Expression = { $item.MTU } },
 				@{Name = 'IPConfig'; Expression = { $ipConfig } },
-				@{Name = 'SRIOV'; Expression = { "" } }
+				@{Name = 'SRIOV'; Expression = { $sriov } }
 			}
 		}
 	}
