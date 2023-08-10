@@ -606,6 +606,7 @@ Param(
 #   Changed function OutputPoolStorageReadCaching to show data when applicable (JohnB)
 #   Changed function OutputPoolStorageReadCaching to show Enabled/Disabled, was True/False (JohnB)
 #   Fixed bug in OutputVMNIC this function now collects IP addresses the right way (JohnB)
+#   Fixed bug in GatherXSPoolStorageData this function now collects Alerts the right way (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -4791,8 +4792,9 @@ Function GatherXSPoolStorageData
 					Name  = "Generate storage throughput alerts"
 					Value = "Enabled"
 				}
-    
-				$repeatIntervalValue = '{0} minutes' -f ([xml]$sr.other_config.perfmon).config.variable["alarm_trigger_period"].value
+
+				$interval = ([xml]$sr.other_config.perfmon).config.variable["alarm_auto_inhibit_period"].value / 60
+				$repeatIntervalValue = '{0} minutes' -f $interval
 				$alerts += [PSCustomObject] @{
 					ID    = 1
 					Name  = "Alert repeat interval"
@@ -4807,7 +4809,7 @@ Function GatherXSPoolStorageData
 					Value = $throughputValue
 				}
     
-				$period = ([xml]$sr.other_config.perfmon).config.variable["alarm_auto_inhibit_period"].value / 60 / 60
+				$period = ([xml]$sr.other_config.perfmon).config.variable["alarm_trigger_period"].value / 60
 				$periodValue = '{0} minutes' -f $period
 				$alerts += [PSCustomObject] @{
 					ID    = 3
