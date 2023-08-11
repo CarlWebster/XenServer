@@ -608,6 +608,7 @@ Param(
 #   Fixed bug in OutputVMNIC this function now collects IP addresses the right way (JohnB)
 #   Fixed bug in GatherXSPoolStorageData this function now collects Alerts the right way (JohnB)
 #   Changed GatherXSPoolNetworkingData to add SRIOV information (JohnB)
+#   Changed OutputHostGPUProperties, this function now shows the data like in XC (JohnB)
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -5060,6 +5061,123 @@ Function GatherXSPoolNetworkingData
 		}
 	}
 	$Script:XSPoolNetworks = @($XSNetworks | Sort-Object -Property XSHostname, Name)
+}
+
+Function GatherXSPoolGPUData
+{
+
+	ForEach ($XSHost in $Script:XSHosts)
+	{
+
+
+		$hostGPU = $XSHost.PGPUs | Get-XenPGPU
+	
+		<#
+		This code is from the XenServer team
+        #>
+		If (
+		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::disable_on_reboot) ) -and
+		( ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::disable_on_reboot) )
+		) {
+			$hostGPUTxt = "This server is currently using the integrated GPU"
+		} Else {
+			$hostGPUTxt = "This server is currently not using the integrated GPU"
+		}
+
+		If (
+		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::enable_on_reboot) ) -and
+		( ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enable_on_reboot) )
+		) {
+			$hostGPUTxt = "This server will use the integrated GPU on next reboot"
+		} Else {
+			$hostGPUTxt = "This server will not use the integrated GPU on next reboot"
+		}
+	
+	}
+
+
+
+
+
+	$pGPUs = @($XSHost.PGPUs | Get-XenPGPU)
+	$XSHostName = $XSHost.Name_Label
+	$nrGPUs = $pGPUs.Count
+
+	ForEach ($Item in $pGPUs)
+	{
+		$gpuGroup = $item.GPU_group | Get-XenGPUGroup
+		$allocation = "$(($gpuGroup.allocation_algorithm).ToString().Replace("depth_first","Maximum density").Replace("breadth_first","Maximum performance")) ($($gpuGroup.allocation_algorithm))"
+		$gpuTypes = $gpuGroup.supported_VGPU_types | Get-XenVGPUType | Sort-Object -Property framebuffer_size, model_name
+		$gpuTypesText = ""
+		ForEach ($type in $gpuTypes)
+		{
+			$gpuTypesLine = "$($type.model_name.ToString().Replace("NVIDIA",$null).Trim()) / Framebuffer:$(Convert-SizeToString -size $type.framebuffer_size -Decimal 1) "
+			If ($type.opaque_ref -in $Item.enabled_VGPU_types.opaque_ref)
+			{
+				$gpuTypesLine += "/ Enabled"
+			}
+			Else
+			{
+				$gpuTypesLine += "/ Disabled"
+			}
+			$gpuTypesText += "$gpuTypesLine`r`n"
+		}
+		If ([string]::IsNullOrEmpty($gpuTypesText))
+		{
+			$gpuTypesText = "none"
+		}
+		If ([String]::IsNullOrEmpty($($Item.is_system_display_device)))
+		{
+			$primaryAdapter = "False"
+		}
+		Else
+		{
+			$primaryAdapter = "$($Item.is_system_display_device)"
+		}
+		<#
+			If ($MSWord -or $PDF)
+			{
+				$ScriptInformation += @{ Data = ""; Value = ""; }
+				$ScriptInformation += @{ Data = "Name"; Value = $($gpuGroup.name_label); }
+				$ScriptInformation += @{ Data = "vGPU allocation"; Value = $($allocation); }
+				$ScriptInformation += @{ Data = "Primary host display adapter"; Value = $($primaryAdapter); }
+				$ScriptInformation += @{ Data = "vGPU Pofiles"; Value = $($gpuTypesText); }
+
+			}
+			If ($Text)
+			{
+				Line 3 "" ""
+				Line 3 "Name`t`t`t`t: " $($gpuGroup.name_label)
+				Line 3 "vGPU allocation`t`t`t: " $($allocation)
+				Line 3 "Primary host display adapter`t: " $($primaryAdapter)
+				Line 3 "vGPU profiles`t`t`t: " $($gpuTypesText)
+				Line 0 ""
+			}
+			If ($HTML)
+			{
+				$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", ($htmlsilver -bor $htmlbold)))
+				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($gpuGroup.name_label), $htmlwhite))
+				$rowdata += @(, ("vGPU allocation", ($htmlsilver -bor $htmlbold), $($allocation), $htmlwhite))
+				$rowdata += @(, ("Primary host display adapter", ($htmlsilver -bor $htmlbold), $($primaryAdapter), $htmlwhite))
+				$rowdata += @(, ("vGPU profiles", ($htmlsilver -bor $htmlbold), $($gpuTypesText.Replace("`r`n", "<br>")), $htmlwhite))
+			}
+	#>
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
 
 Function GetXenVMsOnHost
@@ -9763,11 +9881,11 @@ Function OutputHostGPUProperties
 		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::disable_on_reboot) )
 	)
 	{
-		$HostGPUTxt = "This server is currently using the integrated GPU"
+		$HostGPUTxt1 = "This server is currently using the integrated GPU"
 	}
 	Else
 	{
-		$HostGPUTxt = "This server is currently not using the integrated GPU"
+		$HostGPUTxt1 = "This server is currently not using the integrated GPU"
 	}
 
 	If (
@@ -9775,32 +9893,35 @@ Function OutputHostGPUProperties
 		( ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($HostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enable_on_reboot) )
 	)
 	{
-		$HostGPUTxt = "This server will use the integrated GPU on next reboot"
+		$HostGPUTxt2 = "This server will use the integrated GPU on next reboot"
 	}
 	Else
 	{
-		$HostGPUTxt = "This server will not use the integrated GPU on next reboot"
+		$HostGPUTxt2 = "This server will not use the integrated GPU on next reboot"
 	}
 	
 	If ($MSWord -or $PDF)
 	{
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		$ScriptInformation += @{ Data = $HostGPUTxt; Value = ""; }
+		$ScriptInformation += @{ Data = $HostGPUTxt1; }
+		$ScriptInformation += @{ Data = $HostGPUTxt2; }
 	}
 	If ($Text)
 	{
-		Line 3 $HostGPUTxt
+		Line 3 $HostGPUTxt1
+		Line 3 $HostGPUTxt2
 	}
 	If ($HTML)
 	{
-		$columnHeaders = @($HostGPUTxt, ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+		$columnHeaders = @($HostGPUTxt1, ($htmlsilver -bor $htmlbold))
 		$rowdata = @()
+		$rowdata += @(, ($HostGPUTxt2, ($htmlsilver -bor $htmlbold)))
 	}
 
 	If ($MSWord -or $PDF)
 	{
 		$Table = AddWordTable -Hashtable $ScriptInformation `
-			-Columns Data, Value `
+			-Columns Data `
 			-List `
 			-Format $wdTableGrid `
 			-AutoFit $wdAutoFitFixed;
@@ -9808,8 +9929,7 @@ Function OutputHostGPUProperties
 		## IB - Set the header row format
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-		$Table.Columns.Item(1).Width = 275;
-		$Table.Columns.Item(2).Width = 20;
+		$Table.Columns.Item(1).Width = 300;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -9824,7 +9944,7 @@ Function OutputHostGPUProperties
 	If ($HTML)
 	{
 		$msg = ""
-		$columnWidths = @("275", "10")
+		$columnWidths = @("300")
 		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 		WriteHTMLLine 0 0 ""
 	}
