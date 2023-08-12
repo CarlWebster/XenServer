@@ -609,6 +609,7 @@ Param(
 #   Fixed bug in GatherXSPoolStorageData this function now collects Alerts the right way (JohnB)
 #   Changed GatherXSPoolNetworkingData to add SRIOV information (JohnB)
 #   Changed OutputHostGPUProperties, this function now shows the data like in XC (JohnB)
+#   Created function GatherXSPoolGPUData work in progress
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -5065,119 +5066,115 @@ Function GatherXSPoolNetworkingData
 
 Function GatherXSPoolGPUData
 {
-
-	ForEach ($XSHost in $Script:XSHosts)
+	$XSHostGPUs = @()
+	$i1 = 0
+	$poolGPUTypes = Get-XenVGPUType -EA 0 
+	ForEach ($XSHost in ($Script:XSHosts | Sort-Object -Property name_label))
 	{
+		$pGPUs = @($XSHost.PGPUs | Get-XenPGPU -EA 0 )
+		$XSHostName = $XSHost.Name_Label
+		$hostGPUs = @()
+		$allocation = ""
+		$allocationLong = ""
+		$i2 = 0
+		ForEach ($Item in $pGPUs)
+		{
+			
+			$gpuGroup = $item.GPU_group | Get-XenGPUGroup -EA 0
 
+			$gpuTypes = $poolGPUTypes | Where-Object { $_.opaque_ref -in $item.supported_VGPU_types.opaque_ref } | Sort-Object -Property framebuffer_size, model_name -Descending
+			$allocation = "$(($gpuGroup.allocation_algorithm).ToString().Replace("depth_first","Maximum density").Replace("breadth_first","Maximum performance"))"
+			$allocationLong = "$(($gpuGroup.allocation_algorithm).ToString().Replace("depth_first","Maximum density: put as many VMs as possible on the same GPU").Replace("breadth_first","Maximum performance: put VMs on as many GPUs as possible"))"
+			$gpuPCI = $item.PCI | Get-XenPCI -EA 0
+			$internalGPU = $true
+			If ($item.supported_VGPU_types.count -gt 0)
+			{
+				$internalGPU = $false
+			}
+			$pGPUTypes = @()
+			ForEach ($type in ($gpuTypes | Where-Object { $_.implementation -like "passthrough" }))
+			{
+				
+				
+				$isEnabledOnHost = $false
+				If ($type.opaque_ref -in $Item.enabled_VGPU_types.opaque_ref)
+				{
+					$isEnabledOnHost = $true
+				}
+				$nrvGPUPerHost = ""
+				$videoRAM = ""
+				$name = $type.model_name.Replace("passthrough", "Pass-through whole GPU")
 
-		$hostGPU = $XSHost.PGPUs | Get-XenPGPU
-	
-		<#
-		This code is from the XenServer team
-        #>
-		If (
-		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::disable_on_reboot) ) -and
-		( ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::disable_on_reboot) )
-		) {
-			$hostGPUTxt = "This server is currently using the integrated GPU"
-		} Else {
-			$hostGPUTxt = "This server is currently not using the integrated GPU"
+				$pGPUTypes += [PSCustomObject]@{
+					Name            = $name
+					Fullname        = $name
+					NrvGPUPerHost   = $nrvGPUPerHost
+					VideoRAM        = $videoRAM
+					isEnabledOnHost = $isEnabledOnHost
+				}
+			}
+
+			ForEach ($type in ($gpuTypes | Where-Object { $_.implementation -notlike "passthrough" }))
+			{
+				$isEnabledOnHost = $false
+				If ($type.opaque_ref -in $Item.enabled_VGPU_types.opaque_ref)
+				{
+					$isEnabledOnHost = $true
+				}
+				$nrvGPUPerHost = $item.supported_VGPU_max_capacities[$type]
+				$videoRAM = (Convert-SizeToString -Size $type.framebuffer_size -Decimal 1)
+				$name = $type.model_name
+				$fullname = '{0} virtual GPU ({1} per GPU)' -f $name, $nrvGPUPerHost
+
+				$pGPUTypes += [PSCustomObject]@{
+					Name            = $name
+					Fullname        = $fullname
+					NrvGPUPerHost   = $nrvGPUPerHost
+					VideoRAM        = $videoRAM
+					isEnabledOnHost = $isEnabledOnHost
+				}
+			}
+			$name = $gpuPCI.device_name
+			$residentVGPUs = $item.resident_VGPUs | Get-XenVGPU -EA 0
+			$vmUsage = @()
+			ForEach ($resident in $residentVGPUs) 
+			{
+				$residentVMName = $Script:XSAllVMs | Where-Object { $_.opaque_ref -eq $resident.vm.opaque_ref } | Select-Object -ExpandProperty name_label
+				$residentGPUProfile = $gpuTypes | Where-Object { $_.opaque_ref -eq $resident.type.opaque_ref } | Select-Object -ExpandProperty model_name
+				$vmUsage += [PSCustomObject]@{
+					VMName     = $residentVMName
+					GPUProfile = $residentGPUProfile
+				}
+			}
+			$vmUsage = $vmUsage | Sort-Object -Property VMName
+
+			$hostGPUs += [PSCustomObject]@{
+				ID          = $i2++
+				GPUName     = $name
+				InternalGPU = $internalGPU
+				VMUsage     = $vmUsage
+				GPUTypes    = $pGPUTypes
+			}
+			$i2++
 		}
-
-		If (
-		( ($XSHost.display -eq [XenAPI.host_display]::enabled) -or ($XSHost.display -eq [XenAPI.host_display]::enable_on_reboot) ) -and
-		( ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enabled) -or ($hostGPU.dom0_access -eq [XenAPI.pgpu_dom0_access]::enable_on_reboot) )
-		) {
-			$hostGPUTxt = "This server will use the integrated GPU on next reboot"
-		} Else {
-			$hostGPUTxt = "This server will not use the integrated GPU on next reboot"
+		$gpuAvailable = $false
+		If ($false -in $hostGPUs.InternalGPU)
+		{
+			$gpuAvailable = $true
 		}
-	
+		$XSHostGPUs += [PSCustomObject]@{
+			ID                 = $i1
+			Hostname           = $XSHostName
+			HostRef            = $XSHost.opaque_ref
+			GPUs               = $hostGPUs
+			GPUAvailable       = $gpuAvailable
+			HostAllocation     = $allocation
+			HostAllocationLong = $allocationLong
+		}
+		$i1++
 	}
 
-
-
-
-
-	$pGPUs = @($XSHost.PGPUs | Get-XenPGPU)
-	$XSHostName = $XSHost.Name_Label
-	$nrGPUs = $pGPUs.Count
-
-	ForEach ($Item in $pGPUs)
-	{
-		$gpuGroup = $item.GPU_group | Get-XenGPUGroup
-		$allocation = "$(($gpuGroup.allocation_algorithm).ToString().Replace("depth_first","Maximum density").Replace("breadth_first","Maximum performance")) ($($gpuGroup.allocation_algorithm))"
-		$gpuTypes = $gpuGroup.supported_VGPU_types | Get-XenVGPUType | Sort-Object -Property framebuffer_size, model_name
-		$gpuTypesText = ""
-		ForEach ($type in $gpuTypes)
-		{
-			$gpuTypesLine = "$($type.model_name.ToString().Replace("NVIDIA",$null).Trim()) / Framebuffer:$(Convert-SizeToString -size $type.framebuffer_size -Decimal 1) "
-			If ($type.opaque_ref -in $Item.enabled_VGPU_types.opaque_ref)
-			{
-				$gpuTypesLine += "/ Enabled"
-			}
-			Else
-			{
-				$gpuTypesLine += "/ Disabled"
-			}
-			$gpuTypesText += "$gpuTypesLine`r`n"
-		}
-		If ([string]::IsNullOrEmpty($gpuTypesText))
-		{
-			$gpuTypesText = "none"
-		}
-		If ([String]::IsNullOrEmpty($($Item.is_system_display_device)))
-		{
-			$primaryAdapter = "False"
-		}
-		Else
-		{
-			$primaryAdapter = "$($Item.is_system_display_device)"
-		}
-		<#
-			If ($MSWord -or $PDF)
-			{
-				$ScriptInformation += @{ Data = ""; Value = ""; }
-				$ScriptInformation += @{ Data = "Name"; Value = $($gpuGroup.name_label); }
-				$ScriptInformation += @{ Data = "vGPU allocation"; Value = $($allocation); }
-				$ScriptInformation += @{ Data = "Primary host display adapter"; Value = $($primaryAdapter); }
-				$ScriptInformation += @{ Data = "vGPU Pofiles"; Value = $($gpuTypesText); }
-
-			}
-			If ($Text)
-			{
-				Line 3 "" ""
-				Line 3 "Name`t`t`t`t: " $($gpuGroup.name_label)
-				Line 3 "vGPU allocation`t`t`t: " $($allocation)
-				Line 3 "Primary host display adapter`t: " $($primaryAdapter)
-				Line 3 "vGPU profiles`t`t`t: " $($gpuTypesText)
-				Line 0 ""
-			}
-			If ($HTML)
-			{
-				$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", ($htmlsilver -bor $htmlbold)))
-				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($gpuGroup.name_label), $htmlwhite))
-				$rowdata += @(, ("vGPU allocation", ($htmlsilver -bor $htmlbold), $($allocation), $htmlwhite))
-				$rowdata += @(, ("Primary host display adapter", ($htmlsilver -bor $htmlbold), $($primaryAdapter), $htmlwhite))
-				$rowdata += @(, ("vGPU profiles", ($htmlsilver -bor $htmlbold), $($gpuTypesText.Replace("`r`n", "<br>")), $htmlwhite))
-			}
-	#>
-	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+	$Script:XSHostGPUs = $XSHostGPUs | Sort-Object -Property Hostname
 }
 
 Function GetXenVMsOnHost
@@ -13785,6 +13782,7 @@ Write-Verbose "$(Get-Date -Format G): Start writing report data"
 GatherXSPoolMemoryData
 GatherXSPoolStorageData
 GatherXSPoolNetworkingData
+GatherXSPoolGPUData
 
 If (("Pool" -in $Section) -or ("All" -in $Section))
 {
