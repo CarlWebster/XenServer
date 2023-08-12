@@ -465,7 +465,7 @@
 	NAME: XS_Inventory.ps1
 	VERSION: 0.022
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: August 1, 2023
+	LASTEDIT: August 12, 2023
 #>
 
 #endregion
@@ -609,10 +609,8 @@ Param(
 #   Fixed bug in GatherXSPoolStorageData this function now collects Alerts the right way (JohnB)
 #   Changed GatherXSPoolNetworkingData to add SRIOV information (JohnB)
 #   Changed OutputHostGPUProperties, this function now shows the data like in XC (JohnB)
-#   Created function GatherXSPoolGPUData (JohnB)
-#   Changed OutputPoolGPU to show results (JohnB)
-#   Changed OutputHostGPU to show results (JohnB)
-#   Changed OutputPoolStorage, OutputHostStorage,OutputSharedStorageGeneral to show the status (JohnB)
+#   Created function GatherXSPoolGPUData work in progress
+#
 #.021
 #	Cleanup console output (Webster)
 #	Added the following Functions (Webster)
@@ -927,7 +925,7 @@ $Error.Clear()
 $Script:emailCredentials = $Null
 $script:MyVersion = '0.022'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "08/01/2023"
+$tmpdate = [datetime] "08/12/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4635,7 +4633,7 @@ function Convert-SizeToString
 
 Function GatherXSPoolMemoryData
 {
-	Write-Verbose "$(Get-Date -Format G): `t Gathering Memory Data"
+	#Write-Verbose "$(Get-Date -Format G): `t Gathering Memory Data"
 	$XSPoolMemories = @()
 	foreach ($XSHost in $Script:XSHosts)
 	{
@@ -4699,7 +4697,7 @@ Function GatherXSPoolMemoryData
 
 Function GatherXSPoolStorageData
 {
-	Write-Verbose "$(Get-Date -Format G): `t Gather Storage Data"
+	#Write-Verbose "$(Get-Date -Format G): `t Gather Storage Data"
 	$pbds = Get-XenPBD | Where-Object { $_.host.opaque_ref -in $Script:XSHosts.opaque_ref }
 
 	$XSPoolStorages = @()
@@ -4852,11 +4850,7 @@ Function GatherXSPoolStorageData
 				$readCache.Cache = "Enabled"
 			}
 		}
-		$connectedText = "Broken"
-		If ($item.currently_attached)
-		{
-			$connectedText = "Connected"
-		}
+
 		$XSPoolStorages += $sr | Select-Object -Property `
 		@{Name = 'XSHostName'; Expression = { $XSHostName } },
 		@{Name = 'XSHostRef'; Expression = { $XSHost.opaque_ref } },
@@ -4874,7 +4868,6 @@ Function GatherXSPoolStorageData
 		@{Name = 'Size'; Expression = { $size } },
 		@{Name = 'VirtualAllocation'; Expression = { $virtualAlloc } },
 		@{Name = 'Attached'; Expression = { $item.currently_attached } },
-		@{Name = 'AttachedText'; Expression = { $connectedText } },
 		@{Name = 'AdditionalData'; Expression = { $additionalData } },
 		@{Name = 'ReadCache'; Expression = { $readCache } },
 		@{Name = 'UUID'; Expression = { $_.uuid } }
@@ -4884,7 +4877,7 @@ Function GatherXSPoolStorageData
 
 Function GatherXSPoolNetworkingData
 {
-	Write-Verbose "$(Get-Date -Format G): `t Gathering Networking data"
+	#Write-Verbose "$(Get-Date -Format G): `t Gathering Networking data"
 	$networks = @(Get-XenNetwork -EA 0 | Where-Object { $_.other_config["is_host_internal_management_network"] -notlike $true })
 	$XSNetworks = @()
 	$nrNetworks = $networks.Count
@@ -5074,10 +5067,7 @@ Function GatherXSPoolNetworkingData
 
 Function GatherXSPoolGPUData
 {
-	Write-Verbose "$(Get-Date -Format G): `t Gathering GPU data"
 	$XSHostGPUs = @()
-	$XSHostGPUProfileGroups = @()
-	$XSHostGPUProfileGroupsCount = 0
 	$i1 = 0
 	$poolGPUTypes = Get-XenVGPUType -EA 0 
 	ForEach ($XSHost in ($Script:XSHosts | Sort-Object -Property name_label))
@@ -5093,20 +5083,15 @@ Function GatherXSPoolGPUData
 			
 			$gpuGroup = $item.GPU_group | Get-XenGPUGroup -EA 0
 
+			$gpuTypes = $poolGPUTypes | Where-Object { $_.opaque_ref -in $item.supported_VGPU_types.opaque_ref } | Sort-Object -Property framebuffer_size, model_name -Descending
 			$allocation = "$(($gpuGroup.allocation_algorithm).ToString().Replace("depth_first","Maximum density").Replace("breadth_first","Maximum performance"))"
 			$allocationLong = "$(($gpuGroup.allocation_algorithm).ToString().Replace("depth_first","Maximum density: put as many VMs as possible on the same GPU").Replace("breadth_first","Maximum performance: put VMs on as many GPUs as possible"))"
 			$gpuPCI = $item.PCI | Get-XenPCI -EA 0
-			$name = $gpuPCI.device_name
 			$internalGPU = $true
 			If ($item.supported_VGPU_types.count -gt 0)
 			{
 				$internalGPU = $false
 			}
-			$gpuTypes = @()
-			If ($internalGPU -eq $false)
-			{
-				$gpuTypes = $poolGPUTypes | Where-Object { $_.opaque_ref -in $item.supported_VGPU_types.opaque_ref } | Sort-Object -Property framebuffer_size, model_name -Descending
-			
 			$pGPUTypes = @()
 			ForEach ($type in ($gpuTypes | Where-Object { $_.implementation -like "passthrough" }))
 			{
@@ -5124,7 +5109,6 @@ Function GatherXSPoolGPUData
 				$pGPUTypes += [PSCustomObject]@{
 					Name            = $name
 					Fullname        = $name
-					FullnameExtra   = $name
 					NrvGPUPerHost   = $nrvGPUPerHost
 					VideoRAM        = $videoRAM
 					isEnabledOnHost = $isEnabledOnHost
@@ -5142,92 +5126,35 @@ Function GatherXSPoolGPUData
 				$videoRAM = (Convert-SizeToString -Size $type.framebuffer_size -Decimal 1)
 				$name = $type.model_name
 				$fullname = '{0} virtual GPU ({1} per GPU)' -f $name, $nrvGPUPerHost
-				$fullnameExtra = '{0} virtual GPU ({1} per GPU with {2} RAM each)' -f $name, $nrvGPUPerHost, $videoRAM
 
 				$pGPUTypes += [PSCustomObject]@{
 					Name            = $name
 					Fullname        = $fullname
-					FullnameExtra   = $fullnameExtra
 					NrvGPUPerHost   = $nrvGPUPerHost
 					VideoRAM        = $videoRAM
 					isEnabledOnHost = $isEnabledOnHost
 				}
 			}
+			$name = $gpuPCI.device_name
 			$residentVGPUs = $item.resident_VGPUs | Get-XenVGPU -EA 0
 			$vmUsage = @()
 			ForEach ($resident in $residentVGPUs) 
 			{
-				$residentVMName = @( <#$Script:XSAllVMs | Where-Object { $_.opaque_ref -eq $resident.vm.opaque_ref } | Select-Object -ExpandProperty name_label#> )
+				$residentVMName = $Script:XSAllVMs | Where-Object { $_.opaque_ref -eq $resident.vm.opaque_ref } | Select-Object -ExpandProperty name_label
 				$residentGPUProfile = $gpuTypes | Where-Object { $_.opaque_ref -eq $resident.type.opaque_ref } | Select-Object -ExpandProperty model_name
 				$vmUsage += [PSCustomObject]@{
 					VMName     = $residentVMName
 					GPUProfile = $residentGPUProfile
 				}
 			}
-			$vmUsage = @($vmUsage | Sort-Object -Property VMName)
+			$vmUsage = $vmUsage | Sort-Object -Property VMName
 
 			$hostGPUs += [PSCustomObject]@{
 				ID          = $i2++
-				HostID      = $i1
 				GPUName     = $name
 				InternalGPU = $internalGPU
 				VMUsage     = $vmUsage
 				GPUTypes    = $pGPUTypes
-			}
-				If ($XSHostGPUProfileGroupsCount -eq 0)
-				{
-					$XSHostGPUProfileGroups += [PSCustomObject]@{
-						HostIDs   = @([PSCustomObject]@{
-								HostID    = $i1
-								GPUTypeID = $i2
-							})
-						HostNames = @($XSHostName)
-						GPUTypes  = $pGPUTypes
-					}
-					$XSHostGPUProfileGroupsCount++
-				}
-				Else
-				{
-					$gpuAdded = $false
-					For ($cnt = 0 ; $cnt -le $XSHostGPUProfileGroupsCount - 1 ; $cnt++)
-					{
-						If ($($XSHostGPUProfileGroups[$cnt].GPUTypes | ConvertTo-Json -Compress) -eq $($pGPUTypes | ConvertTo-Json -Compress))
-						{
-							$XSHostGPUProfileGroups[$cnt].HostIDs += [PSCustomObject]@{
-								HostID    = $i1
-								GPUTypeID = $i2
-							}
-							If ($XSHostName -notin $XSHostGPUProfileGroups[$cnt].HostNames)
-							{
-								$XSHostGPUProfileGroups[$cnt].HostNames += $XSHostName
-							}
-							$gpuAdded = $true
-						}
-					}
-					If ($gpuAdded -eq $false)
-					{
-						$XSHostGPUProfileGroups += [PSCustomObject]@{
-							HostIDs   = @([PSCustomObject]@{
-									HostID    = $i1
-									GPUTypeID = $i2
-								})
-							HostNames = @($XSHostName)
-							GPUTypes  = $pGPUTypes
-						}
-						$XSHostGPUProfileGroupsCount++
-					}
-				}
-			}
-			Else
-			{
-				$hostGPUs += [PSCustomObject]@{
-					ID          = $i2++
-					HostID      = $i1
-					GPUName     = $name
-					InternalGPU = $internalGPU
-					VMUsage     = @()
-					GPUTypes    = @()
-				}
 			}
 			$i2++
 		}
@@ -5248,8 +5175,7 @@ Function GatherXSPoolGPUData
 		$i1++
 	}
 
-	$Script:XSHostGPUs = @($XSHostGPUs | Sort-Object -Property Hostname)
-	$Script:XSHostGPUProfileGroups = @($XSHostGPUProfileGroups)
+	$Script:XSHostGPUs = $XSHostGPUs | Sort-Object -Property Hostname
 }
 
 Function GetXenVMsOnHost
@@ -6794,7 +6720,6 @@ Function OutputPoolStorage
 					[System.Collections.Hashtable[]] $ScriptInformation = @()
 					$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
 					$ScriptInformation += @{ Data = "     Host"; Value = $($item.XSHostName); }
-					$ScriptInformation += @{ Data = "     Status"; Value = $($item.AttachedText); }
 					$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
 					$ScriptInformation += @{ Data = "     Default SR"; Value = $($item.DefaultSR); }
 					$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
@@ -6807,7 +6732,6 @@ Function OutputPoolStorage
 				{
 					Line 2 "Name: " $($item.Name)
 					Line 3 "Host               : " $($item.XSHostName)
-					Line 3 "Status             : " $($item.AttachedText)
 					Line 3 "Description        : " $($item.Description)
 					Line 3 "Default SR         : " $($item.DefaultSR)
 					Line 3 "Type               : " $($item.Type)
@@ -6822,7 +6746,6 @@ Function OutputPoolStorage
 					$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
 					$rowdata = @()
 					$rowdata += @(, ("     Host", ($htmlsilver -bor $htmlbold), $($item.XSHostName), $htmlwhite))
-					$rowdata += @(, ("     Status", ($htmlsilver -bor $htmlbold), $($item.AttachedText), $htmlwhite))
 					$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
 					$rowdata += @(, ("     Default SR", ($htmlsilver -bor $htmlbold), $($item.DefaultSR), $htmlwhite))
 					$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
@@ -7813,109 +7736,7 @@ Function OutputPoolGPU
 	{
 		WriteHTMLLine 2 0 "GPU"
 	}
-
-
-	If ($Script:XSHostGPUProfileGroups.Count -eq 0)
-	{
-		If ($MSWord -or $PDF)
-		{
-			WriteWordLine 0 1 "GPU configuration and monitoring is disabled, because there are no GPUs available in this pool."
-		}
-		If ($Text)
-		{
-			Line 3 "GPU configuration and monitoring is disabled, because there are no GPUs available in this pool."
-			Line 0 ""
-		}
-		If ($HTML)
-		{
-			WriteHTMLLine 0 1 "GPU configuration and monitoring is disabled, because there are no GPUs available in this pool."
-		}
-	}
-	Else
-	{
-		ForEach ($Item in $Script:XSHostGPUProfileGroups)
-		{
-			If ($MSWord -or $PDF)
-			{
-				[System.Collections.Hashtable[]] $ScriptInformation = @()
-			}
-			If ($Text)
-			{
-				#nothing
-			}
-			If ($HTML)
-			{
-				$rowdata = @()
-			}
-
-			If ($MSWord -or $PDF)
-			{
-				$ScriptInformation += @{ Data = "Hosts"; Value = "$($item.HostNames -Join ", ")"; }
-			}
-			If ($Text)
-			{
-				Line 3 "Host(s)": " $($item.HostNames -Join ", ")"
-			}
-			If ($HTML)
-			{
-				$columnHeaders = @("Host(s)", ($htmlsilver -bor $htmlbold), "$($item.HostNames -Join ", ")", $htmlwhite)
-			}
-
-			ForEach ($type in $Item.GPUTypes)
-			{
-				$valueText = "Disabled"
-				If ($type.isEnabledOnHost)
-				{
-					$valueText = "Enabled"
-				}
-				
-				If ($MSWord -or $PDF)
-				{
-					$ScriptInformation += @{ Data = "$($type.FullnameExtra)"; Value = "$valueText"; }
-				}
-				If ($Text)
-				{
-					Line 3 "$($type.FullnameExtra)": " $valueText"
-				}
-				If ($HTML)
-				{
-					$rowdata += @(, ("$($type.FullnameExtra)", ($htmlsilver -bor $htmlbold), "$valueText", $htmlwhite))
-				}
-			}
 	
-			If ($MSWord -or $PDF)
-			{
-				$Table = AddWordTable -Hashtable $ScriptInformation `
-					-Columns Data, Value `
-					-List `
-					-Format $wdTableGrid `
-					-AutoFit $wdAutoFitFixed;
-	
-				## IB - Set the header row format
-				SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-	
-				$Table.Columns.Item(1).Width = 400;
-				$Table.Columns.Item(2).Width = 100;
-	
-				$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-	
-				FindWordDocumentEnd
-				$Table = $Null
-				WriteWordLine 0 0 ""
-			}
-			If ($Text)
-			{
-				Line 0 ""
-			}
-			If ($HTML)
-			{
-				$msg = ""
-				$columnWidths = @("400", "100")
-				FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-				WriteHTMLLine 0 0 ""
-			}
-		}
-	}
 }
 
 Function OutputPoolHA
@@ -10394,7 +10215,6 @@ Function OutputHostStorage
 					[System.Collections.Hashtable[]] $ScriptInformation = @()
 				}
 				$ScriptInformation += @{ Data = "Name"; Value = $($item.Name); }
-				$ScriptInformation += @{ Data = "     Status"; Value = $($item.AttachedText); }
 				$ScriptInformation += @{ Data = "     Description"; Value = $($item.Description); }
 				$ScriptInformation += @{ Data = "     Type"; Value = $($item.Type); }
 				$ScriptInformation += @{ Data = "     Shared"; Value = $($item.Shared); }
@@ -10404,14 +10224,13 @@ Function OutputHostStorage
 			}
 			If ($Text)
 			{
-				Line 3 "Name : " $($item.Name)
-				Line 4 "Status              : " $($item.Description)
-				Line 4 "Description         : " $($item.AttachedText)
-				Line 4 "Type                : " $($item.Type)
-				Line 4 "Shared              : " $($item.Shared)
-				Line 4 "Usage               : " $($item.Usage)
-				Line 4 "Size                : " $($item.Size)
-				Line 4 "Virtual allocation  : " $($item.VirtualAllocation)
+				Line 3 "Name: " $($item.Name)
+				Line 4 "Description`t`t: " $($item.Description)
+				Line 4 "Type`t`t`t: " $($item.Type)
+				Line 4 "Shared`t`t`t: " $($item.Shared)
+				Line 4 "Usage`t`t`t: " $($item.Usage)
+				Line 4 "Size`t`t`t: " $($item.Size)
+				Line 4 "Virtual allocation`t: " $($item.VirtualAllocation)
 				Line 0 ""
 			}
 			If ($HTML)
@@ -10427,7 +10246,6 @@ Function OutputHostStorage
 					$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
 				}
 				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($item.Name), ($htmlsilver -bor $htmlbold)))
-				$rowdata += @(, ("     Status", ($htmlsilver -bor $htmlbold), $($item.AttachedText), $htmlwhite))
 				$rowdata += @(, ("     Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
 				$rowdata += @(, ("     Type", ($htmlsilver -bor $htmlbold), $($item.Type), $htmlwhite))
 				$rowdata += @(, ("     Shared", ($htmlsilver -bor $htmlbold), $($item.Shared), $htmlwhite))
@@ -11400,126 +11218,146 @@ Function OutputHostGPU
 {
 	Param([object]$XSHost)
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput Host GPU"
-	$XSHostName = $XSHost.name_label
-
+	$pGPUs = @($XSHost.PGPUs | Get-XenPGPU)
+	$XSHostName = $XSHost.Name_Label
+	$nrGPUs = $pGPUs.Count
 	If ($MSWord -or $PDF)
 	{
-		$Selection.InsertNewPage()
-		WriteWordLine 2 0 "GPU"
+		WriteWordLine 3 0 "GPU"
 	}
 	If ($Text)
 	{
-		Line 0 ""
-		Line 1 "GPU"
+		Line 2 "GPU"
 	}
 	If ($HTML)
 	{
-		WriteHTMLLine 2 0 "GPU"
+		WriteHTMLLine 3 0 "GPU"
 	}
 
-	$hostProfileGroups = @($Script:XSHostGPUProfileGroups | Where-Object { $XSHostName -in $_.HostNames })
-
-	If ($hostProfileGroups.Count -eq 0)
+	If ($nrGPUs -lt 1)
 	{
+
 		If ($MSWord -or $PDF)
 		{
-			WriteWordLine 0 1 "GPU configuration and monitoring is disabled, because there are no GPUs available on this host."
+			WriteWordLine 0 1 "There are no GPU's configured for Host $XSHostName"
 		}
 		If ($Text)
 		{
-			Line 3 "GPU configuration and monitoring is disabled, because there are no GPUs available on this host."
+			Line 3 "There are no GPU's configured for Host $XSHostName"
 			Line 0 ""
 		}
 		If ($HTML)
 		{
-			WriteHTMLLine 0 1 "GPU configuration and monitoring is disabled, because there are no GPUs available on this host."
+			WriteHTMLLine 0 1 "There are no GPU's configured for Host $XSHostName"
 		}
 	}
 	Else
 	{
-		
-		
-		ForEach ($Item in $hostProfileGroups)
+		If ($MSWord -or $PDF)
 		{
-			If ($MSWord -or $PDF)
-			{
-				[System.Collections.Hashtable[]] $ScriptInformation = @()
-			}
-			If ($Text)
-			{
-				#nothing
-			}
-			If ($HTML)
-			{
-				$rowdata = @()
-			}
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Number of GPU's Installed"; Value = "$nrGPUs"; }
+		}
+		If ($Text)
+		{
+			Line 3 "Number of GPU's Installed: " "$nrGPUs"
+		}
+		If ($HTML)
+		{
+			$columnHeaders = @("Number of GPU's Installed", ($htmlsilver -bor $htmlbold), "$nrGPUs", $htmlwhite)
+			$rowdata = @()
+		}
 
+		ForEach ($Item in $pGPUs)
+		{
+			$gpuGroup = $item.GPU_group | Get-XenGPUGroup
+			$allocation = "$(($gpuGroup.allocation_algorithm).ToString().Replace("depth_first","Maximum density").Replace("breadth_first","Maximum performance")) ($($gpuGroup.allocation_algorithm))"
+			$gpuTypes = $gpuGroup.supported_VGPU_types | Get-XenVGPUType | Sort-Object -Property framebuffer_size, model_name
+			$gpuTypesText = ""
+			ForEach ($type in $gpuTypes)
+			{
+				$gpuTypesLine = "$($type.model_name.ToString().Replace("NVIDIA",$null).Trim()) / Framebuffer:$(Convert-SizeToString -size $type.framebuffer_size -Decimal 1) "
+				If ($type.opaque_ref -in $Item.enabled_VGPU_types.opaque_ref)
+				{
+					$gpuTypesLine += "/ Enabled"
+				}
+				Else
+				{
+					$gpuTypesLine += "/ Disabled"
+				}
+				$gpuTypesText += "$gpuTypesLine`r`n"
+			}
+			If ([string]::IsNullOrEmpty($gpuTypesText))
+			{
+				$gpuTypesText = "none"
+			}
+			If ([String]::IsNullOrEmpty($($Item.is_system_display_device)))
+			{
+				$primaryAdapter = "False"
+			}
+			Else
+			{
+				$primaryAdapter = "$($Item.is_system_display_device)"
+			}
+			
 			If ($MSWord -or $PDF)
 			{
-				$ScriptInformation += @{ Data = "Hosts"; Value = "$XSHostName"; }
-			}
-			If ($Text)
-			{
-				Line 3 "Host(s)": " $XSHostName"
-			}
-			If ($HTML)
-			{
-				$columnHeaders = @("Host(s)", ($htmlsilver -bor $htmlbold), "$XSHostName", $htmlwhite)
-			}
+				$ScriptInformation += @{ Data = ""; Value = ""; }
+				$ScriptInformation += @{ Data = "Name"; Value = $($gpuGroup.name_label); }
+				$ScriptInformation += @{ Data = "vGPU allocation"; Value = $($allocation); }
+				$ScriptInformation += @{ Data = "Primary host display adapter"; Value = $($primaryAdapter); }
+				$ScriptInformation += @{ Data = "vGPU Pofiles"; Value = $($gpuTypesText); }
 
-			ForEach ($type in $Item.GPUTypes)
-			{
-				$valueText = "Disabled"
-				If ($type.isEnabledOnHost)
-				{
-					$valueText = "Enabled"
-				}
-				
-				If ($MSWord -or $PDF)
-				{
-					$ScriptInformation += @{ Data = "$($type.FullnameExtra)"; Value = "$valueText"; }
-				}
-				If ($Text)
-				{
-					Line 3 "$($type.FullnameExtra)": " $valueText"
-				}
-				If ($HTML)
-				{
-					$rowdata += @(, ("$($type.FullnameExtra)", ($htmlsilver -bor $htmlbold), "$valueText", $htmlwhite))
-				}
-			}
-	
-			If ($MSWord -or $PDF)
-			{
-				$Table = AddWordTable -Hashtable $ScriptInformation `
-					-Columns Data, Value `
-					-List `
-					-Format $wdTableGrid `
-					-AutoFit $wdAutoFitFixed;
-	
-				## IB - Set the header row format
-				SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
-	
-				$Table.Columns.Item(1).Width = 400;
-				$Table.Columns.Item(2).Width = 100;
-	
-				$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
-	
-				FindWordDocumentEnd
-				$Table = $Null
-				WriteWordLine 0 0 ""
 			}
 			If ($Text)
 			{
+				Line 3 "" ""
+				Line 3 "Name`t`t`t`t: " $($gpuGroup.name_label)
+				Line 3 "vGPU allocation`t`t`t: " $($allocation)
+				Line 3 "Primary host display adapter`t: " $($primaryAdapter)
+				Line 3 "vGPU profiles`t`t`t: " $($gpuTypesText)
 				Line 0 ""
 			}
 			If ($HTML)
 			{
-				$msg = ""
-				$columnWidths = @("400", "100")
-				FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
-				WriteHTMLLine 0 0 ""
+				$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", ($htmlsilver -bor $htmlbold)))
+				$rowdata += @(, ("Name", ($htmlsilver -bor $htmlbold), $($gpuGroup.name_label), $htmlwhite))
+				$rowdata += @(, ("vGPU allocation", ($htmlsilver -bor $htmlbold), $($allocation), $htmlwhite))
+				$rowdata += @(, ("Primary host display adapter", ($htmlsilver -bor $htmlbold), $($primaryAdapter), $htmlwhite))
+				$rowdata += @(, ("vGPU profiles", ($htmlsilver -bor $htmlbold), $($gpuTypesText.Replace("`r`n", "<br>")), $htmlwhite))
 			}
+		}
+		
+		If ($MSWord -or $PDF)
+		{
+			$Table = AddWordTable -Hashtable $ScriptInformation `
+				-Columns Data, Value `
+				-List `
+				-Format $wdTableGrid `
+				-AutoFit $wdAutoFitFixed;
+
+			## IB - Set the header row format
+			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(2).Width = 350;
+
+			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+			FindWordDocumentEnd
+			$Table = $Null
+			WriteWordLine 0 0 ""
+		}
+		If ($Text)
+		{
+			Line 0 ""
+		}
+		If ($HTML)
+		{
+			$msg = ""
+			$columnWidths = @("150", "350")
+			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+			WriteHTMLLine 0 0 ""
 		}
 	}
 }
@@ -11568,8 +11406,7 @@ Function OutputSharedStorageGeneral
 		WriteWordLine 2 0 "General: $($storage.Name)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $($storage.Name); }
-		$ScriptInformation += @{ Data = "Status"; Value = $($storage.AttachedText); }
-        $ScriptInformation += @{ Data = "Description"; Value = $($storage.Description); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($storage.Description); }
 		$ScriptInformation += @{ Data = "Default SR"; Value = $($storage.DefaultSR); }
 		$ScriptInformation += @{ Data = "Tags"; Value = $($storage.Tags -join ", "); }
 		$ScriptInformation += @{ Data = "Folder"; Value = $($storage.Folder); }
@@ -11599,7 +11436,6 @@ Function OutputSharedStorageGeneral
 	{
 		Line 1 "General"
 		Line 2 "Name`t`t: " $($storage.Name)
-		Line 2 "Status`t`t: " $($storage.AttachedText)
 		Line 2 "Description`t: " $($storage.Description)
 		Line 2 "Default SR`t: " $($storage.DefaultSR)
 		Line 2 "Tags`t`t: " $($storage.Tags)
@@ -11615,7 +11451,6 @@ Function OutputSharedStorageGeneral
 		WriteHTMLLine 2 0 "General: $($storage.Name)"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($storage.Name), $htmlwhite)
-		$rowdata += @(, ('Status', ($htmlsilver -bor $htmlbold), $($storage.AttachedText), $htmlwhite))
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $($storage.Description), $htmlwhite))
 		$rowdata += @(, ('Default SR', ($htmlsilver -bor $htmlbold), $($storage.DefaultSR), $htmlwhite))
 		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), $($storage.Tags), $htmlwhite))
