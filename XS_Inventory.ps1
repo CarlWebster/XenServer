@@ -463,7 +463,7 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.022
+	VERSION: 0.023
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
 	LASTEDIT: August 12, 2023
 #>
@@ -588,6 +588,25 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.023
+#	Added the following Functions (Webster)
+#		OutputPoolWLBSettingsOptimizationMode
+#		OutputPoolWLBSettingsAutomation
+#		OutputPoolWLBSettingsCriticalThresholds
+#		OutputPoolWLBSettingsMetricWeighting
+#		OutputPoolWLBSettingsExcludedHosts
+#		OutputPoolWLBSettingsAdvanced
+#	Fixed handling an invalid option used for -Section (Webster)
+#	Fixed where there were no Custom Fields or Custom Fields were empty and were not handled properly (Webster)
+#	Fixed alignment, formatting, and spacing issues for Line and Word/PDF output(Webster)
+#	Fixed Tags and Folders missing in HTML output (Webster)
+#	In Function OutputVM, worked around two issues: (Webster)
+#		A divide by zero error when a key didn't exist: $vm.platform["cores-per-socket"]
+#		A "null value passed to a method" error when a key didn't exist: $VM.HVM_boot_params['firmware']
+#	In Function OutputVMCPU, worked around a divide by zero error when a key didn't exist: $vm.platform["cores-per-socket"] (Webster)
+#	In Functions OutputHostUpdates and OutputPoolUpdates, change HTML output to not use a fixed width column (Webster)
+#	Updated the output section headings in Function OutputPoolWLB (Webster)
 #
 #.022
 #   Configured the following Functions (JohnB)
@@ -923,7 +942,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.022'
+$script:MyVersion = '0.023'
 $Script:ScriptName = "XS_Inventory.ps1"
 $tmpdate = [datetime] "08/12/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
@@ -952,12 +971,14 @@ If ($HTML)
 
 $ValidSection = $False
 #there are no Break statements since there can be multiple sections entered
+#added a break to handle an invalid section option
 Switch ($Section)
 {
 	"Pool"	{ $ValidSection = $True }
 	"Host"	{ $ValidSection = $True }
 	"VM"	{ $ValidSection = $True }
 	"All"	{ $ValidSection = $True }
+	Default { $ValidSection = $False; Break}
 }
 
 If ($ValidSection -eq $False)
@@ -972,6 +993,7 @@ If ($ValidSection -eq $False)
 	Valid options are:
 
 	`tPool
+	`tSharedStorage
 	`tHost
 	`tVM (Virtual Machines)
 	`tAll
@@ -1666,7 +1688,7 @@ Function ValidateCoverPage
 
 Function CheckWordPrereq
 {
-	If ((Test-Path  REGISTRY::HKEY_CLASSES_ROOT\Word.Application) -eq $False)
+	If ((Test-Path REGISTRY::HKEY_CLASSES_ROOT\Word.Application) -eq $False)
 	{
 		Write-Host "
 		`n
@@ -1678,7 +1700,7 @@ Function CheckWordPrereq
 	#find out our session (usually "1" except on TS/RDC or Citrix)
 	$SessionID = (Get-Process -PID $PID).SessionId
 	
-	#Find out   If winword is running in our session
+	#Find out if winword is running in our session
 	#fixed by MBS
 	[bool]$wordrunning = $null –ne ((Get-Process 'WinWord' -ea 0) | Where-Object { $_.SessionId -eq $SessionID })
 	If ($wordrunning)
@@ -4315,10 +4337,11 @@ Function ProcessScriptSetup
 	{
 		Switch ($Section)
 		{
-			"Pool"	{ [string]$Script:Title = "Citrix XenServer Inventory (Pool Only)"; Break }
-			"Host"	{ [string]$Script:Title = "Citrix XenServer Inventory (Hosts Only)"; Break }
-			"VM"	{ [string]$Script:Title = "Citrix XenServer Inventory (VMs Only"; Break }
-			Default	{ [string]$Script:Title = "Citrix XenServer Inventory (Missing a section title for $Section"; Break }
+			"Pool"		{ [string]$Script:Title = "Citrix XenServer Inventory (Pool Only)"; Break }
+			"SharedStorage"	{ [string]$Script:Title = "Citrix XenServer Inventory (Shared Storage Only)"; Break }
+			"Host"		{ [string]$Script:Title = "Citrix XenServer Inventory (Hosts Only)"; Break }
+			"VM"		{ [string]$Script:Title = "Citrix XenServer Inventory (VMs Only"; Break }
+			Default		{ [string]$Script:Title = "Citrix XenServer Inventory (Missing a section title for $Section"; Break }
 		}
 	}
 	ElseIf ($Section.Count -gt 1)
@@ -4326,10 +4349,11 @@ Function ProcessScriptSetup
 		[string]$Script:Title = "Citrix XenServer Inventory ("
 		Switch ($Section)
 		{
-			"Pool"	{ [string]$Script:Title += "Pool " }
-			"Host"	{ [string]$Script:Title += "Hosts " }
-			"VM"	{ [string]$Script:Title += "VMs " }
-			Default	{ [string]$Script:Title += "Missing a section title for $Section" }
+			"Pool"		{ [string]$Script:Title += "Pool " }
+			"SharedStorage"	{ [string]$Script:Title += "Shared Storage "; Break }
+			"Host"		{ [string]$Script:Title += "Hosts " }
+			"VM"		{ [string]$Script:Title += "VMs " }
+			Default		{ [string]$Script:Title += "Missing a section title for $Section" }
 		}
 		[string]$Script:Title = $Script:Title.Substring(0, $Script:Title.LastIndexOf(" ")) + ")"
 	}
@@ -5387,7 +5411,9 @@ Function OutputPoolGeneralOverview
 Function OutputPoolUpdates
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Updates"
-	$Updates = Get-XenPoolPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | Select-Object name_label, version | Sort-Object name_label
+	$Updates = Get-XenPoolPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | `
+	Select-Object name_label, version | `
+	Sort-Object name_label
 
 	If ($MSWord -or $PDF)
 	{
@@ -5456,8 +5482,9 @@ Function OutputPoolUpdates
 			'Fully applied', ($htmlsilver -bor $htmlbold))
 
 		$msg = ""
-		$columnWidths = @("150")
-		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		#$columnWidths = @("250")
+		#FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders
 	}
 }
 
@@ -5754,7 +5781,7 @@ Function OutputPoolCustomFields
 		WriteHTMLLine 2 0 "Custom Fields"
 	}
 	
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		$PoolName = $Script:XSPool.Name_Label
 		If ($MSWord -or $PDF)
@@ -6857,11 +6884,14 @@ Function OutputPoolStorageGeneral
 	}
 	If ($HTML)
 	{
+		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
+		$xtags = $Item.Tags.Trim("<", ">")
+		$folderName = $Item.Folder.Trim("<", ">")
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
 		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
-		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($xtags), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($foldername), $htmlwhite))
 	}
 	
 	If ($MSWord -or $PDF)
@@ -6915,15 +6945,16 @@ Function OutputPoolStorageCustomFields
 		WriteHTMLLine 4 0 "Storage Custom Fields"
 	}
 
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
-			Line 3 "There are no Custom Fields"
+			Line 4 "There are no Custom Fields"
 			Line 0 ""
 		}
 		If ($HTML)
@@ -6956,7 +6987,7 @@ Function OutputPoolStorageCustomFields
 			}
 			If ($Text)
 			{
-				Line 3 "$($Item.Name): " $Item.Value
+				Line 4 "$($Item.Name): " $Item.Value
 			}
 			If ($HTML)
 			{
@@ -7035,7 +7066,7 @@ Function OutputPoolStorageAlerts
 		}
 		If ($Text)
 		{
-			Line 3 "$($alert.Name): " $alert.Value
+			Line 4 "$($alert.Name): " $alert.Value
 		}
 		If ($HTML)
 		{
@@ -7086,7 +7117,8 @@ Function OutputPoolStorageReadCaching
 {
 	Param([object] $item)
 	
-	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Read Caching => $($item.ReadCache)"
+	#Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Read Caching => $($item.ReadCache)"
+	Write-Verbose "$(Get-Date -Format G): `t`t`tOutput Pool Storage Read Caching"
 	If ($item.ReadCache.ReadCacheSupport -eq $true)
 	{
 		
@@ -7122,7 +7154,7 @@ Function OutputPoolStorageReadCaching
 		}
 		If ($Text)
 		{
-			Line 3 "Read Caching: " "$($item.ReadCache.Cache)"
+			Line 4 "Read Caching: " "$($item.ReadCache.Cache)"
 		}
 		If ($HTML)
 		{
@@ -7198,10 +7230,11 @@ Function OutputPoolNetworking
 			If ($MSWord -or $PDF)
 			{
 				WriteWordLine 0 1 "There are no networks configured for Host $XSHostName"
+				WriteWordLine 0 0 ""
 			}
 			If ($Text)
 			{
-				Line 3 "There are no Network networks configured for Host $XSHostName"
+				Line 2 "There are no Network networks configured for Host $XSHostName"
 				Line 0 ""
 			}
 			If ($HTML)
@@ -7235,7 +7268,7 @@ Function OutputPoolNetworking
 			}
 			If ($Text)
 			{
-				Line 3 "Number of networks: " "$nrNetworking"
+				Line 2 "Number of networks: " "$nrNetworking"
 				Line 0 ""
 			}
 			If ($HTML)
@@ -7388,11 +7421,14 @@ Function OutputPoolNetworkGeneral
 	}
 	If ($HTML)
 	{
+		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
+		$xtags = $Item.Tags.Trim("<", ">")
+		$folderName = $Item.Folder.Trim("<", ">")
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
 		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
-		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($foldername), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($xtags), $htmlwhite))
 	}
 	
 	If ($MSWord -or $PDF)
@@ -7447,15 +7483,16 @@ Function OutputPoolNetworkCustomFields
 		WriteHTMLLine 4 0 "Network Custom Fields"
 	}
 
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
-			Line 3 "There are no Custom Fields"
+			Line 4 "There are no Custom Fields"
 			Line 0 ""
 		}
 		If ($HTML)
@@ -7574,7 +7611,7 @@ Function OutputPoolNetworkNetworkSettings
 	}
 	If ($Text)
 	{
-		Line 3 "Automatically add this network to new virtual machines: " $Item.Auto
+		Line 4 "Automatically add this network to new virtual machines: " $Item.Auto
 	}
 	If ($HTML)
 	{
@@ -7651,26 +7688,26 @@ Function OutputPoolNetworkIPAddressConfiguration
 		If ($MSWord -or $PDF)
 		{
 			$ScriptInformation += @{ Data = "Server"; Value = $ipConfig.XSHostname; }
-			$ScriptInformation += @{ Data = "Interface"; Value = $ipConfig.IPConfig.Name; }
-			$ScriptInformation += @{ Data = "Network"; Value = $ipConfig.Name; }
-			$ScriptInformation += @{ Data = "NIC"; Value = $ipConfig.NIC; }
-			$ScriptInformation += @{ Data = "IP Setup"; Value = $ipConfig.IPConfig.Mode; }
-			$ScriptInformation += @{ Data = "IP Address"; Value = $ipConfig.IPConfig.IP; }
-			$ScriptInformation += @{ Data = "Subnet mask"; Value = $ipConfig.IPConfig.Netmask; }
-			$ScriptInformation += @{ Data = "Gateway"; Value = $ipConfig.IPConfig.Gateway; }
-			$ScriptInformation += @{ Data = "DNS"; Value = $ipConfig.IPConfig.DNS; }
+			$ScriptInformation += @{ Data = "     Interface"; Value = $ipConfig.IPConfig.Name; }
+			$ScriptInformation += @{ Data = "     Network"; Value = $ipConfig.Name; }
+			$ScriptInformation += @{ Data = "     NIC"; Value = $ipConfig.NIC; }
+			$ScriptInformation += @{ Data = "     IP Setup"; Value = $ipConfig.IPConfig.Mode; }
+			$ScriptInformation += @{ Data = "     IP Address"; Value = $ipConfig.IPConfig.IP; }
+			$ScriptInformation += @{ Data = "     Subnet mask"; Value = $ipConfig.IPConfig.Netmask; }
+			$ScriptInformation += @{ Data = "     Gateway"; Value = $ipConfig.IPConfig.Gateway; }
+			$ScriptInformation += @{ Data = "     DNS"; Value = $ipConfig.IPConfig.DNS; }
 		}
 		If ($Text)
 		{
-			Line 3 "Server         : " $ipConfig.XSHostname
-			Line 3 "  Interface    : " $ipConfig.IPConfig.Name
-			Line 3 "  Network      : " $ipConfig.Name
-			Line 3 "  NIC          : " $ipConfig.NIC
-			Line 3 "  IP Setup     : " $ipConfig.IPConfig.Mode
-			Line 3 "  IP Address   : " $ipConfig.IPConfig.IP
-			Line 3 "  Subnet mask  : " $ipConfig.IPConfig.Netmask
-			Line 3 "  Gateway      : " $ipConfig.IPConfig.Gateway
-			Line 3 "  DNS          : " $ipConfig.IPConfig.DNS
+			Line 4 "Server: " $ipConfig.XSHostname
+			Line 5 "Interface  : " $ipConfig.IPConfig.Name
+			Line 5 "Network    : " $ipConfig.Name
+			Line 5 "NIC        : " $ipConfig.NIC
+			Line 5 "IP Setup   : " $ipConfig.IPConfig.Mode
+			Line 5 "IP Address : " $ipConfig.IPConfig.IP
+			Line 5 "Subnet mask: " $ipConfig.IPConfig.Netmask
+			Line 5 "Gateway    : " $ipConfig.IPConfig.Gateway
+			Line 5 "DNS        : " $ipConfig.IPConfig.DNS
 		}
 		If ($HTML)
 		{
@@ -7872,8 +7909,10 @@ Function OutputPoolWLB
 	
 	If ($Script:XSPool.wlb_enabled)
 	{
+		Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Configuration"
 		If ($MSWord -or $PDF)
 		{
+			WriteWordLine 3 0 "Configuration"
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
 			$ScriptInformation += @{ Data = "Server Address"; Value = ""; }
 			$ScriptInformation += @{ Data = "     Address"; Value = "$($Script:XSPool.wlb_url)"; }
@@ -7900,14 +7939,16 @@ Function OutputPoolWLB
 		}
 		If ($Text)
 		{
-			Line 2 "Server Address"
-			Line 3 "Address : " "$($Script:XSPool.wlb_url)"
-			Line 2 "WLB Server Credentials"
-			Line 3 "Username: " "$($Script:XSPool.wlb_username)"
+			Line 2 "Configuration"
+			Line 3 "Server Address"
+			Line 4 "Address : " "$($Script:XSPool.wlb_url)"
+			Line 3 "WLB Server Credentials"
+			Line 4 "Username: " "$($Script:XSPool.wlb_username)"
 			Line 0 ""
 		}
 		If ($HTML)
 		{
+			WriteHTMLLine 3 0 "Configuration"
 			$rowdata = @()
 			$columnHeaders = @("Server Address", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
 			$rowdata += @(, ("     Address", ($htmlsilver -bor $htmlbold), "$($Script:XSPool.wlb_url)", $htmlwhite))
@@ -7919,6 +7960,12 @@ Function OutputPoolWLB
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
+		OutputPoolWLBSettingsOptimizationMode
+		OutputPoolWLBSettingsAutomation
+		OutputPoolWLBSettingsCriticalThresholds
+		OutputPoolWLBSettingsMetricWeighting
+		OutputPoolWLBSettingsExcludedHosts
+		OutputPoolWLBSettingsAdvanced
 	}
 	Else
 	{
@@ -7963,6 +8010,114 @@ Function OutputPoolWLB
 		}
 	}
 }
+
+Function OutputPoolWLBSettingsOptimizationMode
+{
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Settings Optimization Mode"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Optimization Mode"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 2 "Optimization Mode"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Optimization Mode"
+	}
+}	
+
+Function OutputPoolWLBSettingsAutomation
+{
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Settings Automation"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Automation"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 2 "Automation"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Automation"
+	}
+}	
+
+Function OutputPoolWLBSettingsCriticalThresholds
+{
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Settings Critical Thresholds"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Critical Thresholds"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 2 "Critical Thresholds"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Critical Thresholds"
+	}
+}	
+
+Function OutputPoolWLBSettingsMetricWeighting
+{
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Settings Metric Weighting"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Metric Weighting"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 2 "Metric Weighting"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Metric Weighting"
+	}
+}	
+
+Function OutputPoolWLBSettingsExcludedHosts
+{
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Settings Excluded Hosts"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Excluded Hosts"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 2 "Excluded Hosts"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Excluded Hosts"
+	}
+}	
+
+Function OutputPoolWLBSettingsAdvanced
+{
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Settings Advanced"
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Advanced"
+	}
+	If ($Text)
+	{
+		Line 0 ""
+		Line 2 "Advanced"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Advanced"
+	}
+}	
 
 Function OutputPoolUsers
 {
@@ -8661,8 +8816,9 @@ Function OutputHostUpdates
 			'Applied', ($htmlsilver -bor $htmlbold))
 
 		$msg = ""
-		$columnWidths = @("150")
-		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		#$columnWidths = @("150")
+		#FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		FormatHTMLTable $msg "auto" -rowArray $rowdata -columnArray $columnHeaders
 	}
 }
 
@@ -9065,13 +9221,14 @@ Function OutputHostCustomFields
 		WriteHTMLLine 3 0 "Custom Fields"
 	}
 	
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		$HostName = $XSHost.Name_Label
 
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields for Host $HostName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -9515,14 +9672,14 @@ Function OutputHostLogDestination
 	If ($XSHost.Logging.Count -eq 0)
 	{
 		$LogLocation = "Local"
-		$StoreLogs = "Not selected"
-		$LogServer = ""
+		$StoreLogs   = "Not selected"
+		$LogServer   = ""
 	}
 	Else
 	{
 		$LogLocation = "Local and Remote ($($XSHost.logging.syslog_destination))"
-		$StoreLogs = "Selected"
-		$LogServer = "$($XSHost.logging.syslog_destination)"
+		$StoreLogs   = "Selected"
+		$LogServer   = "$($XSHost.logging.syslog_destination)"
 	}
 	
 	If ($MSWord -or $PDF)
@@ -10351,11 +10508,14 @@ Function OutputHostStorageGeneral
 	}
 	If ($HTML)
 	{
+		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
+		$xtags = $Item.Tags.Trim("<", ">")
+		$folderName = $Item.Folder.Trim("<", ">")
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
 		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
-		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($foldername), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($xtags), $htmlwhite))
 	}
 	
 	If ($MSWord -or $PDF)
@@ -10409,15 +10569,16 @@ Function OutputHostStorageCustomFields
 		WriteHTMLLine 5 0 "Storage Custom Fields"
 	}
 
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
-			Line 3 "There are no Custom Fields"
+			Line 5 "There are no Custom Fields"
 			Line 0 ""
 		}
 		If ($HTML)
@@ -10450,7 +10611,7 @@ Function OutputHostStorageCustomFields
 			}
 			If ($Text)
 			{
-				Line 3 "$($Item.Name): " $Item.Value
+				Line 5 "$($Item.Name): " $Item.Value
 			}
 			If ($HTML)
 			{
@@ -10529,7 +10690,7 @@ Function OutputHostStorageAlerts
 		}
 		If ($Text)
 		{
-			Line 3 "$($alert.Name): " $alert.Value
+			Line 4 "$($alert.Name): " $alert.Value
 		}
 		If ($HTML)
 		{
@@ -10601,6 +10762,7 @@ Function OutputHostNetworking
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no networks configured for Host $XSHostName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -10782,11 +10944,13 @@ Function OutputHostNetworkGeneral
 	}
 	If ($HTML)
 	{
+		$xtags = $Item.Tags.Trim("<", ">")
+		$folderName = $Item.Folder.Trim("<", ">")
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
 		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
-		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($foldername), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($xtags), $htmlwhite))
 	}
 	
 	If ($MSWord -or $PDF)
@@ -10840,15 +11004,16 @@ Function OutputHostNetworkCustomFields
 		WriteHTMLLine 5 0 "Network Custom Fields"
 	}
 
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
-			Line 3 "There are no Custom Fields"
+			Line 4 "There are no Custom Fields"
 			Line 0 ""
 		}
 		If ($HTML)
@@ -10967,7 +11132,7 @@ Function OutputHostNetworkNetworkSettings
 	}
 	If ($Text)
 	{
-		Line 3 "Automatically add this network to new virtual machines: " $Item.Auto
+		Line 4 "Automatically add this network to new virtual machines: " $Item.Auto
 	}
 	If ($HTML)
 	{
@@ -11105,6 +11270,7 @@ Function OutputHostNICs
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no NICs configured for Host $XSHostName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -11240,6 +11406,7 @@ Function OutputHostGPU
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no GPU's configured for Host $XSHostName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -11448,13 +11615,16 @@ Function OutputSharedStorageGeneral
 	}
 	If ($HTML)
 	{
+		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
+		$xtags = $storage.Tags.Trim("<", ">")
+		$folderName = $storage.Folder.Trim("<", ">")
 		WriteHTMLLine 2 0 "General: $($storage.Name)"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($storage.Name), $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $($storage.Description), $htmlwhite))
 		$rowdata += @(, ('Default SR', ($htmlsilver -bor $htmlbold), $($storage.DefaultSR), $htmlwhite))
-		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), $($storage.Tags), $htmlwhite))
-		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $($storage.Folder), $htmlwhite))
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), $($xtags), $htmlwhite))
+		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $($foldername), $htmlwhite))
 		$rowdata += @(, ('Type', ($htmlsilver -bor $htmlbold), $($storage.Type), $htmlwhite))
 		$storage.AdditionalData.GetEnumerator() | ForEach-Object { $rowdata += @(, ($_.Key, ($htmlsilver -bor $htmlbold), $($_.Value), $htmlwhite)) }
 		$rowdata += @(, ('UUID', ($htmlsilver -bor $htmlbold), $($storage.UUID), $htmlwhite))
@@ -11483,11 +11653,12 @@ Function OutputSharedStorageCustomFields
 		WriteHTMLLine 3 0 "Custom Fields"
 	}
 
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -11783,7 +11954,15 @@ Function OutputVM
 
 	try
 	{
-		$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
+		If($VM.platform.Keys -contains "cores-per-socket") #added by Webster
+		{
+			$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
+		}
+		Else
+		{
+			$sockets = [int]$VM.VCPUs_max #assume that cores per socket is one if the Key does not exist
+		}
+		
 		If ($sockets -gt 1)
 		{
 			$vCPUText = "$($VM.VCPUs_max) ($sockets sockets with $vCPUcoreText each)"
@@ -11805,6 +11984,15 @@ Function OutputVM
 	Else
 	{
 		$xenVMSecureBoot = $VM.HVM_boot_params["secureboot"]
+	}
+
+	If($VM.HVM_boot_params.Keys -contains "firmware") #added by Webster
+	{
+		$BootMode = "$($VM.HVM_boot_params['firmware'].ToUpper()) Boot"
+	}
+	Else
+	{
+		$BootMode = "BIOS Boot" #assume BIOS Boot if the Key does not exist
 	}
 
 	If ($MSWord -or $PDF)
@@ -11833,7 +12021,8 @@ Function OutputVM
 			$ScriptInformation += @{ Data = "Memory"; Value = $xenVmMem; }
 		}
 		$ScriptInformation += @{ Data = "Boot order"; Value = $($bootorder -join ", "); }
-		$ScriptInformation += @{ Data = "Boot mode"; Value = $VM.HVM_boot_params["firmware"].ToUpper(); }
+		#$ScriptInformation += @{ Data = "Boot mode"; Value = $VM.HVM_boot_params["firmware"].ToUpper(); }
+		$ScriptInformation += @{ Data = "Boot mode"; Value = $BootMode; }
 		$ScriptInformation += @{ Data = "Secure boot"; Value = $xenVMSecureBoot; }
 
 		$Table = AddWordTable -Hashtable $ScriptInformation `
@@ -11872,7 +12061,8 @@ Function OutputVM
 			Line 2 "Memory`t`t`t: " $xenVmMem
 		}
 		Line 2 "Boot order`t`t: " $($bootorder -join ", ")
-		Line 2 "Boot mode`t`t: " $VM.HVM_boot_params["firmware"].ToUpper()
+		#Line 2 "Boot mode`t`t: " $VM.HVM_boot_params["firmware"].ToUpper()
+		Line 2 "Boot mode`t`t: " $BootMode
 		Line 2 "Secure boot`t`t: " $xenVMSecureBoot
 
 		Line 0 ""
@@ -11897,7 +12087,8 @@ Function OutputVM
 			$rowdata += @(, ('Memory', ($htmlsilver -bor $htmlbold), $xenVmMem, $htmlwhite))
 		}
 		$rowdata += @(, ('Boot order', ($htmlsilver -bor $htmlbold), $($bootorder -join ", "), $htmlwhite))
-		$rowdata += @(, ('Boot mode', ($htmlsilver -bor $htmlbold), $VM.HVM_boot_params["firmware"].ToUpper(), $htmlwhite))
+		#$rowdata += @(, ('Boot mode', ($htmlsilver -bor $htmlbold), $VM.HVM_boot_params["firmware"].ToUpper(), $htmlwhite))
+		$rowdata += @(, ('Boot mode', ($htmlsilver -bor $htmlbold), $BootMode, $htmlwhite))
 		$rowdata += @(, ('Secure boot', ($htmlsilver -bor $htmlbold), $xenVMSecureBoot, $htmlwhite))
 
 		$msg = ""
@@ -11927,13 +12118,14 @@ Function OutputVMCustomFields
 		WriteHTMLLine 3 0 "Custom Fields"
 	}
 	
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If ($Null -eq $CustomFields)
 	{
 		$VMName = $VM.Name_Label
 
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields for VM $VMName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -12056,7 +12248,15 @@ Function OutputVMCPU
 
 	try
 	{
-		$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
+		If($VM.platform.keys -contains "cores-per-socket") #added by Webster
+		{
+			$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
+		}
+		Else
+		{
+			$sockets = [int]$VM.VCPUs_max #assume that cores per socket is one if the Key does not exist
+		}
+		
 		If ($sockets -gt 1)
 		{
 			$vCPUText = "$sockets sockets with $vCPUcoreText each"
@@ -12632,6 +12832,7 @@ Function OutputVMGPU
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no GPU's configured for VM $VMName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -13177,15 +13378,16 @@ Function OutputVMStorageCustomFields
 		WriteHTMLLine 5 0 "Storage Custom Fields"
 	}
 
-	If ([String]::IsNullOrEmpty($CustomFields) -or $CustomFields.Count -eq 0)
+	If($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Custom Fields"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
-			Line 3 "There are no Custom Fields"
+			Line 5 "There are no Custom Fields"
 			Line 0 ""
 		}
 		If ($HTML)
@@ -13218,7 +13420,7 @@ Function OutputVMStorageCustomFields
 			}
 			If ($Text)
 			{
-				Line 3 "$($Item.Name): " $Item.Value
+				Line 5 "$($Item.Name): " $Item.Value
 			}
 			If ($HTML)
 			{
@@ -13394,6 +13596,7 @@ Function OutputVMNIC
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no Virtual Network Interfaces configured for VM $VMName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
@@ -13573,6 +13776,7 @@ Function OutputVMSnapshots
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 0 1 "There are no snapshots configured for VM $VMName"
+			WriteWordLine 0 0 ""
 		}
 		If ($Text)
 		{
