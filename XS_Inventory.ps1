@@ -463,9 +463,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.023
+	VERSION: 0.024
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: August 12, 2023
+	LASTEDIT: August 14, 2023
 #>
 
 #endregion
@@ -588,6 +588,10 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.024
+#	In Function ProcessScriptSetup, add getting Workload Balancing data (Webster)
+#	Updated Function OutputPoolWLB with data (Webster)
 #
 #.023
 #	Added the following Functions (Webster)
@@ -942,9 +946,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.023'
+$script:MyVersion = '0.024'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "08/12/2023"
+$tmpdate = [datetime] "08/14/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -974,11 +978,12 @@ $ValidSection = $False
 #added a break to handle an invalid section option
 Switch ($Section)
 {
-	"Pool"	{ $ValidSection = $True }
-	"Host"	{ $ValidSection = $True }
-	"VM"	{ $ValidSection = $True }
-	"All"	{ $ValidSection = $True }
-	Default { $ValidSection = $False; Break}
+	"Pool"		{ $ValidSection = $True }
+	"SharedStorage"	{ $ValidSection = $True }
+	"Host"		{ $ValidSection = $True }
+	"VM"		{ $ValidSection = $True }
+	"All"		{ $ValidSection = $True }
+	Default 	{ $ValidSection = $False; Break}
 }
 
 If ($ValidSection -eq $False)
@@ -4214,7 +4219,8 @@ Function ProcessScriptSetup
 	{
 		#success
 		$Script:PoolMasterInfo = ($Script:XSPool | Get-XenPoolProperty -XenProperty master -EA 0)
-		$Script:OtherConfig = ($XSPool | Get-XenPoolProperty -XenProperty OtherConfig -EA 0)
+		$Script:OtherConfig = ($Script:XSPool | Get-XenPoolProperty -XenProperty OtherConfig -EA 0)
+		$Script:WLBInfo = ($Script:XSPool | Invoke-XenPool -XenAction RetrieveWlbConfiguration -PassThru -EA 0)
 	}
 	ElseIf ($? -and $Null -eq $Script:XSPool)
 	{
@@ -7910,14 +7916,40 @@ Function OutputPoolWLB
 	If ($Script:XSPool.wlb_enabled)
 	{
 		Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Configuration"
+		
+		Switch ($Script:WLBInfo.OptimizationMode)
+		{
+			0	{$PoolOptimizationMode = "Maximize Performance"; Break}
+			1	{$PoolOptimizationMode = "Maximize Density"; Break}
+			Default	{$PoolOptimizationMode = "Unable to determine Pool optimization mode: $($Script:WLBInfo.OptimizationMode)"; Break}
+		}
+		
+		If($Script:WLBInfo.AutoBalanceEnabled)
+		{
+			$AutomatedOptimizations = "Yes"
+		}
+		Else
+		{
+			$AutomatedOptimizations = "No"
+		}
+		
+		If($Script:WLBInfo.PowerManagementEnabled)
+		{
+			$PowerManagementEnabled = "Yes"
+		}
+		Else
+		{
+			$PowerManagementEnabled = "No"
+		}
+		
 		If ($MSWord -or $PDF)
 		{
 			WriteWordLine 3 0 "Configuration"
 			[System.Collections.Hashtable[]] $ScriptInformation = @()
-			$ScriptInformation += @{ Data = "Server Address"; Value = ""; }
-			$ScriptInformation += @{ Data = "     Address"; Value = "$($Script:XSPool.wlb_url)"; }
-			$ScriptInformation += @{ Data = "WLB Server Credentials"; Value = ""; }
-			$ScriptInformation += @{ Data = "     Username"; Value = "$($Script:XSPool.wlb_username)"; }
+			$ScriptInformation += @{ Data = "Workload Balancing server name"; Value = "$($Script:XSPool.wlb_url)"; }
+			$ScriptInformation += @{ Data = "Pool optimization mode"; Value = $PoolOptimizationMode; }
+			$ScriptInformation += @{ Data = "Automated optimizations"; Value = $AutomatedOptimizations; }
+			$ScriptInformation += @{ Data = "Power management"; Value = $PowerManagementEnabled; }
 
 			$Table = AddWordTable -Hashtable $ScriptInformation `
 				-Columns Data, Value `
@@ -7928,7 +7960,7 @@ Function OutputPoolWLB
 			## IB - Set the header row format
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
-			$Table.Columns.Item(1).Width = 150;
+			$Table.Columns.Item(1).Width = 175;
 			$Table.Columns.Item(2).Width = 250;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
@@ -7940,23 +7972,23 @@ Function OutputPoolWLB
 		If ($Text)
 		{
 			Line 2 "Configuration"
-			Line 3 "Server Address"
-			Line 4 "Address : " "$($Script:XSPool.wlb_url)"
-			Line 3 "WLB Server Credentials"
-			Line 4 "Username: " "$($Script:XSPool.wlb_username)"
+			Line 3 "Workload Balancing server name: " "$($Script:XSPool.wlb_url)"
+			Line 3 "Pool optimization mode        : " $PoolOptimizationMode
+			Line 3 "Automated optimizations       : " $AutomatedOptimizations
+			Line 3 "Power management              : " $PowerManagementEnabled
 			Line 0 ""
 		}
 		If ($HTML)
 		{
 			WriteHTMLLine 3 0 "Configuration"
 			$rowdata = @()
-			$columnHeaders = @("Server Address", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
-			$rowdata += @(, ("     Address", ($htmlsilver -bor $htmlbold), "$($Script:XSPool.wlb_url)", $htmlwhite))
-			$rowdata += @(, ("WLB Server Credentials", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
-			$rowdata += @(, ("     Username", ($htmlsilver -bor $htmlbold), "$($Script:XSPool.wlb_username)", $htmlwhite))
+			$columnHeaders = @("Workload Balancing server name", ($htmlsilver -bor $htmlbold), "$($Script:XSPool.wlb_url)", $htmlwhite)
+			$rowdata += @(, ("Pool optimization mode", ($htmlsilver -bor $htmlbold), $PoolOptimizationMode, $htmlwhite))
+			$rowdata += @(, ("Automated optimizations", ($htmlsilver -bor $htmlbold), $AutomatedOptimizations, $htmlwhite))
+			$rowdata += @(, ("Power management", ($htmlsilver -bor $htmlbold), $PowerManagementEnabled, $htmlwhite))
 
 			$msg = ""
-			$columnWidths = @("150", "250")
+			$columnWidths = @("200", "250")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
