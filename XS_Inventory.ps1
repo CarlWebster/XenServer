@@ -465,7 +465,7 @@
 	NAME: XS_Inventory.ps1
 	VERSION: 0.024
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: August 14, 2023
+	LASTEDIT: August 15, 2023
 #>
 
 #endregion
@@ -591,7 +591,13 @@ Param(
 #
 #.024
 #	In Function ProcessScriptSetup, add getting Workload Balancing data (Webster)
-#	Updated Function OutputPoolWLB with data (Webster)
+#	Updated the following Functions with data (Webster)
+#		OutputPoolWLB
+#		OutputPoolWLBSettingsOptimizationMode
+#		OutputPoolWLBSettingsAutomation
+#		OutputPoolWLBSettingsCriticalThresholds
+#		OutputPoolWLBSettingsMetricWeighting
+#		OutputPoolWLBSettingsAdvanced
 #
 #.023
 #	Added the following Functions (Webster)
@@ -948,7 +954,7 @@ $Error.Clear()
 $Script:emailCredentials = $Null
 $script:MyVersion = '0.024'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "08/14/2023"
+$tmpdate = [datetime] "08/15/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -7961,7 +7967,7 @@ Function OutputPoolWLB
 			SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
 			$Table.Columns.Item(1).Width = 175;
-			$Table.Columns.Item(2).Width = 250;
+			$Table.Columns.Item(2).Width = 175;
 
 			$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -7988,7 +7994,7 @@ Function OutputPoolWLB
 			$rowdata += @(, ("Power management", ($htmlsilver -bor $htmlbold), $PowerManagementEnabled, $htmlwhite))
 
 			$msg = ""
-			$columnWidths = @("200", "250")
+			$columnWidths = @("200", "200")
 			FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
 			WriteHTMLLine 0 0 ""
 		}
@@ -8059,6 +8065,99 @@ Function OutputPoolWLBSettingsOptimizationMode
 	{
 		WriteHTMLLine 3 0 "Optimization Mode"
 	}
+	
+	If($Script:WLBInfo.EnableOptimizationModeSchedules -eq 'true')
+	{
+		If ($MSWord -or $PDF)
+		{
+			[System.Collections.Hashtable[]] $ScriptInformation = @()
+			$ScriptInformation += @{ Data = "Scheduled"; Value = ""; }
+		}
+		If ($Text)
+		{
+			Line 3 "Scheduled"
+		}
+		If ($HTML)
+		{
+			$rowdata = @()
+			$columnHeaders = @("Scheduled", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+		}
+	}
+	Else
+	{
+		If($Script:WLBInfo.OptimizationMode -eq 0)
+		{
+			If ($MSWord -or $PDF)
+			{
+				[System.Collections.Hashtable[]] $ScriptInformation = @()
+				$ScriptInformation += @{ Data = "Fixed"; Value = ""; }
+				$ScriptInformation += @{ Data = "Maximize Performance (Default)"; Value = "Guarantee performance metrics for placed VMs"; }
+			}
+			If ($Text)
+			{
+				Line 3 "Fixed"
+				Line 4 "Maximize Performance (Default): " "Guarantee performance metrics for placed VMs"
+			}
+			If ($HTML)
+			{
+				$rowdata = @()
+				$columnHeaders = @("Fixed", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+				$rowdata += @(, ("Maximize Performance (Default)", ($htmlsilver -bor $htmlbold), "Guarantee performance metrics for placed VMs", $htmlwhite))
+			}
+		}
+		Else
+		{
+			If ($MSWord -or $PDF)
+			{
+				[System.Collections.Hashtable[]] $ScriptInformation = @()
+				$ScriptInformation += @{ Data = "Fixed"; Value = ""; }
+				$ScriptInformation += @{ Data = "Maximize Density"; Value = "Place the largest possible number of VMs on each host"; }
+			}
+			If ($Text)
+			{
+				Line 3 "Fixed"
+				Line 4 "Maximize Density: " "Place the largest possible number of VMs on each host"
+			}
+			If ($HTML)
+			{
+				$rowdata = @()
+				$columnHeaders = @("Fixed", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+				$rowdata += @(, ("Maximize Density", ($htmlsilver -bor $htmlbold), "Place the largest possible number of VMs on each host", $htmlwhite))
+			}
+		}
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 175;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$msg = ""
+		$columnWidths = @("200", "275")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
 }	
 
 Function OutputPoolWLBSettingsAutomation
@@ -8076,6 +8175,69 @@ Function OutputPoolWLBSettingsAutomation
 	If ($HTML)
 	{
 		WriteHTMLLine 3 0 "Automation"
+	}
+
+	If($Script:WLBInfo.AutoBalanceEnabled -eq 'true')
+	{
+		$AutoApplyOptimizations = "Selected"
+	}
+	Else
+	{
+		$AutoApplyOptimizations = "Not Selected"
+	}
+	
+	If($Script:WLBInfo.PowerManagementEnabled -eq 'true')
+	{
+		$AutoApplyPowerMgmt = "Selected"
+	}
+	Else
+	{
+		$AutoApplyPowerMgmt = "Not Selected"
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Automation"; Value = ""; }
+		$ScriptInformation += @{ Data = "     Automatically apply Optimization recommendations"; Value = $AutoApplyOptimizations; }
+		$ScriptInformation += @{ Data = "     Automatically apply Power Management recommendations"; Value = $AutoApplyPowerMgmt; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 300;
+		$Table.Columns.Item(2).Width = 100;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Automation"
+		Line 4 "Automatically apply Optimization recommendations    : " $AutoApplyOptimizations
+		Line 4 "Automatically apply Power Management recommendations: " $AutoApplyPowerMgmt
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Automation", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+		$rowdata += @(, ("     Automatically apply Optimization recommendations", ($htmlsilver -bor $htmlbold), $AutoApplyOptimizations, $htmlwhite))
+		$rowdata += @(, ("     Automatically apply Power Management recommendations", ($htmlsilver -bor $htmlbold), $AutoApplyPowerMgmt, $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("350", "100")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
 	}
 }	
 
@@ -8095,6 +8257,76 @@ Function OutputPoolWLBSettingsCriticalThresholds
 	{
 		WriteHTMLLine 3 0 "Critical Thresholds"
 	}
+	#CPU Utilization:	HostCpuThresholdCritical * 100
+	#Free Memory:		HostMemoryThresholdCritical / 1024 / 1024
+	#Network Read:		HostPifReadThresholdCritical / 1024 / 1024
+	#Network Write:		HostPifWriteThresholdCritical / 1024 / 1024
+	#Disk Read:		HostPbdReadThresholdCritical / 1024 / 1024
+	#Disk Write:		HostPbdWriteThresholdCritical / 1024 / 1024
+	[double]$CPUUtilization = $Script:WLBInfo.HostCpuThresholdCritical
+	$CPUUtilization = $CPUUtilization * 100
+	[int]$FreeMemory     = (($Script:WLBInfo.HostMemoryThresholdCritical / 1024) / 1024)
+	[int]$NetworkRead    = (($Script:WLBInfo.HostPifReadThresholdCritical / 1024) / 1024)
+	[int]$NetworkWrite   = (($Script:WLBInfo.HostPifWriteThresholdCritical / 1024) / 1024)
+	[int]$DiskRead       = (($Script:WLBInfo.HostPbdReadThresholdCritical / 1024) / 1024)
+	[int]$DiskWrite      = (($Script:WLBInfo.HostPbdWriteThresholdCritical / 1024) / 1024)
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Critical Thresholds"; Value = ""; }
+		$ScriptInformation += @{ Data = "     CPU Utilization"; Value = $CPUUtilization.ToString(); }
+		$ScriptInformation += @{ Data = "     Free Memory"; Value = $FreeMemory.ToString(); }
+		$ScriptInformation += @{ Data = "     Network Read"; Value = $NetworkRead.ToString(); }
+		$ScriptInformation += @{ Data = "     Network Write"; Value = $NetworkWrite.ToString(); }
+		$ScriptInformation += @{ Data = "     Disk Read"; Value = $DiskRead.ToString(); }
+		$ScriptInformation += @{ Data = "     Disk Write"; Value = $DiskWrite.ToString(); }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(2).Width = 50;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Critical Thresholds"
+		Line 4 "CPU Utilization: " $CPUUtilization.ToString()
+		Line 4 "Free Memory    : " $FreeMemory.ToString()
+		Line 4 "Network Read   : " $NetworkRead.ToString()
+		Line 4 "Network Write  : " $NetworkWrite.ToString()
+		Line 4 "Disk Read      : " $DiskRead.ToString()
+		Line 4 "Disk Write     : " $DiskWrite.ToString()
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Critical Thresholds", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+		$rowdata += @(, ("     CPU Utilization", ($htmlsilver -bor $htmlbold), $CPUUtilization.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Free Memory", ($htmlsilver -bor $htmlbold), $FreeMemory.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Network Read", ($htmlsilver -bor $htmlbold), $NetworkRead.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Network Write", ($htmlsilver -bor $htmlbold), $NetworkWrite.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Disk Read", ($htmlsilver -bor $htmlbold), $DiskRead.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Disk Write", ($htmlsilver -bor $htmlbold), $DiskWrite.ToString(), $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("100", "50")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
 }	
 
 Function OutputPoolWLBSettingsMetricWeighting
@@ -8113,6 +8345,85 @@ Function OutputPoolWLBSettingsMetricWeighting
 	{
 		WriteHTMLLine 3 0 "Metric Weighting"
 	}
+
+	#$Script:WLBInfo.VmCpuUtilizationWeightHigh: 0.9
+	#$Script:WLBInfo.VmMemoryWeightHigh        : 0.8
+	#$Script:WLBInfo.VmNetworkReadWeightHigh   : 0.7
+	#$Script:WLBInfo.VmNetworkWriteWeightHigh  : 0.6
+	#$Script:WLBInfo.VmDiskReadWeightHigh      : 0.5
+	#$Script:WLBInfo.VmDiskWriteWeightHigh     : 0.4
+	
+	[double]$VmCpuUtilizationWeightHigh = $Script:WLBInfo.VmCpuUtilizationWeightHigh
+	[double]$VmMemoryWeightHigh         = $Script:WLBInfo.VmMemoryWeightHigh        
+	[double]$VmNetworkReadWeightHigh    = $Script:WLBInfo.VmNetworkReadWeightHigh   
+	[double]$VmNetworkWriteWeightHigh   = $Script:WLBInfo.VmNetworkWriteWeightHigh  
+	[double]$VmDiskReadWeightHigh       = $Script:WLBInfo.VmDiskReadWeightHigh      
+	[double]$VmDiskWriteWeightHigh      = $Script:WLBInfo.VmDiskWriteWeightHigh
+
+	$VmCpuUtilizationWeightHigh = $VmCpuUtilizationWeightHigh * 100
+        $VmMemoryWeightHigh         = $VmMemoryWeightHigh * 100        
+        $VmNetworkReadWeightHigh    = $VmNetworkReadWeightHigh * 100   
+        $VmNetworkWriteWeightHigh   = $VmNetworkWriteWeightHigh * 100  
+	$VmDiskReadWeightHigh       = $VmDiskReadWeightHigh * 100      
+	$VmDiskWriteWeightHigh      = $VmDiskWriteWeightHigh * 100	
+	
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Metric Weighting"; Value = ""; }
+		$ScriptInformation += @{ Data = "     CPU Utilization"; Value = $VmCpuUtilizationWeightHigh.ToString(); }
+		$ScriptInformation += @{ Data = "     Free Memory"; Value = $VmMemoryWeightHigh.ToString(); }
+		$ScriptInformation += @{ Data = "     Network Read"; Value = $VmNetworkReadWeightHigh.ToString(); }
+		$ScriptInformation += @{ Data = "     Network Write"; Value = $VmNetworkWriteWeightHigh.ToString(); }
+		$ScriptInformation += @{ Data = "     Disk Read"; Value = $VmDiskReadWeightHigh.ToString(); }
+		$ScriptInformation += @{ Data = "     Disk Write"; Value = $VmDiskWriteWeightHigh.ToString(); }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 100;
+		$Table.Columns.Item(2).Width = 50;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Metric Weighting"
+		Line 4 "CPU Utilization: " $VmCpuUtilizationWeightHigh.ToString()
+		Line 4 "Free Memory    : " $VmMemoryWeightHigh.ToString()
+		Line 4 "Network Read   : " $VmNetworkReadWeightHigh.ToString()
+		Line 4 "Network Write  : " $VmNetworkWriteWeightHigh.ToString()
+		Line 4 "Disk Read      : " $VmDiskReadWeightHigh.ToString()
+		Line 4 "Disk Write     : " $VmDiskWriteWeightHigh.ToString()
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Metric Weighting", ($htmlsilver -bor $htmlbold), "", $htmlwhite)
+		$rowdata += @(, ("     CPU Utilization", ($htmlsilver -bor $htmlbold), $VmCpuUtilizationWeightHigh.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Free Memory", ($htmlsilver -bor $htmlbold), $VmMemoryWeightHigh.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Network Read", ($htmlsilver -bor $htmlbold), $VmNetworkReadWeightHigh.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Network Write", ($htmlsilver -bor $htmlbold), $VmNetworkWriteWeightHigh.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Disk Read", ($htmlsilver -bor $htmlbold), $VmDiskReadWeightHigh.ToString(), $htmlwhite))
+		$rowdata += @(, ("     Disk Write", ($htmlsilver -bor $htmlbold), $VmDiskWriteWeightHigh.ToString(), $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("100", "50")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+	
 }	
 
 Function OutputPoolWLBSettingsExcludedHosts
@@ -8148,6 +8459,62 @@ Function OutputPoolWLBSettingsAdvanced
 	If ($HTML)
 	{
 		WriteHTMLLine 3 0 "Advanced"
+	}
+	#VM Migration Interval:			$Script:WLBInfo.RecentMoveMinutes
+	#Recommendation Count:			$Script:WLBInfo.AutoBalancePollIntervals
+	#Recommendation Severity:		$Script:WLBInfo.AutoBalanceSeverity
+	#Optimization Aggressiveness:		$Script:WLBInfo.AutoBalanceAggressiveness
+	#Pool Audit Trail Report Granularity:	$Script:WLBInfo.PoolAuditLogGranularity
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "VM Migration Interval"; Value = "$($Script:WLBInfo.RecentMoveMinutes) Minutes to wait"; }
+		$ScriptInformation += @{ Data = "Recommendation Count"; Value = "$($Script:WLBInfo.AutoBalancePollIntervals) Recommendations"; }
+		$ScriptInformation += @{ Data = "Recommendation Severity"; Value = "$($Script:WLBInfo.AutoBalanceSeverity)"; }
+		$ScriptInformation += @{ Data = "Optimization Aggressiveness"; Value = "$($Script:WLBInfo.AutoBalanceAggressiveness)"; }
+		$ScriptInformation += @{ Data = "Pool Audit Trail Report Granularity"; Value = "$($Script:WLBInfo.PoolAuditLogGranularity)"; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 175;
+		$Table.Columns.Item(2).Width = 150;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "VM Migration Interval              : " "$($Script:WLBInfo.RecentMoveMinutes) Minutes to wait"
+		Line 3 "Recommendation Count               : " "$($Script:WLBInfo.AutoBalancePollIntervals) Recommendations"
+		Line 3 "Recommendation Severity            : " "$($Script:WLBInfo.AutoBalanceSeverity)"
+		Line 3 "Optimization Aggressiveness        : " "$($Script:WLBInfo.AutoBalanceAggressiveness)"
+		Line 3 "Pool Audit Trail Report Granularity: " "$($Script:WLBInfo.PoolAuditLogGranularity)"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("VM Migration Interval", ($htmlsilver -bor $htmlbold), "$($Script:WLBInfo.RecentMoveMinutes) Minutes to wait", $htmlwhite)
+		$rowdata += @(, ("Recommendation Count", ($htmlsilver -bor $htmlbold), "$($Script:WLBInfo.AutoBalancePollIntervals) Recommendations", $htmlwhite))
+		$rowdata += @(, ("Recommendation Severity", ($htmlsilver -bor $htmlbold), "$($Script:WLBInfo.AutoBalanceSeverity)", $htmlwhite))
+		$rowdata += @(, ("Optimization Aggressiveness", ($htmlsilver -bor $htmlbold), "$($Script:WLBInfo.AutoBalanceAggressiveness)", $htmlwhite))
+		$rowdata += @(, ("Pool Audit Trail Report Granularity", ($htmlsilver -bor $htmlbold), "$($Script:WLBInfo.PoolAuditLogGranularity)", $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("200", "150")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
 	}
 }	
 
@@ -11927,9 +12294,9 @@ Function ProcessVMs
 		OutputVMBootOptions $VM
 		OutputVMStartOptions $VM
 		OutputVMAlerts $VM
-		OutputVMHomeServer $VM
 		OutputVMGPU $VM
 		OutputVMAdvancedOptions $VM
+		OutputVMHomeServer $VM
 		OutputVMStorage $VM $VMHost
 		OutputVMNIC $VM
 		OutputVMSnapshots $VM
