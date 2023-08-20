@@ -463,9 +463,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.024
+	VERSION: 0.025
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: August 15, 2023
+	LASTEDIT: August 20, 2023
 #>
 
 #endregion
@@ -588,6 +588,21 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.025
+#	Added some missing section headings in the host output
+#	Copied Function OutputVM to OutputVMGeneralOverview
+#		Altered Function OutputVMGeneralOverview data to match VM General Properties, General
+#	Copied Function OutputVMBootOptions to OutputVMGeneralBootOptions
+#		Altered Function OutputVMGeneralBootOptions data to match VM General Properties, Boot Options
+#	Copied Function OutputVMCPU to OutputVMGeneralCPU
+#		Altered Function OutputVMGeneralCPU data to match VM General Properties, CPUs
+#	Create stub holder Function OutputVMGeneralReadCaching
+#	Fixed the report title for Word/PDF output
+#	For Pool, Host, and VM General output headings, add "General (Overview)" and "General (Properties)"
+#	
+#	Renamed Function OutputVM to OutputVMGeneral
+#	Reordered the VM functions to match the output order in the console
 #
 #.024
 #	In Function ProcessScriptSetup, add getting Workload Balancing data (Webster)
@@ -952,9 +967,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.024'
+$script:MyVersion = '0.025'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "08/15/2023"
+$tmpdate = [datetime] "08/20/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -4343,22 +4358,22 @@ Function ProcessScriptSetup
 	#support multiple section items
 	If ($Section.Count -eq 1 -and $Section -eq "All")
 	{
-		[string]$Script:Title = "Citrix XenServer Inventory"
+		[string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label)"
 	}
 	ElseIf ($Section.Count -eq 1)
 	{
 		Switch ($Section)
 		{
-			"Pool"		{ [string]$Script:Title = "Citrix XenServer Inventory (Pool Only)"; Break }
-			"SharedStorage"	{ [string]$Script:Title = "Citrix XenServer Inventory (Shared Storage Only)"; Break }
-			"Host"		{ [string]$Script:Title = "Citrix XenServer Inventory (Hosts Only)"; Break }
-			"VM"		{ [string]$Script:Title = "Citrix XenServer Inventory (VMs Only"; Break }
-			Default		{ [string]$Script:Title = "Citrix XenServer Inventory (Missing a section title for $Section"; Break }
+			"Pool"		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Pool Only)"; Break }
+			"SharedStorage"	{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Shared Storage Only)"; Break }
+			"Host"		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Hosts Only)"; Break }
+			"VM"		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (VMs Only"; Break }
+			Default		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Missing a section title for $Section"; Break }
 		}
 	}
 	ElseIf ($Section.Count -gt 1)
 	{
-		[string]$Script:Title = "Citrix XenServer Inventory ("
+		[string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) ("
 		Switch ($Section)
 		{
 			"Pool"		{ [string]$Script:Title += "Pool " }
@@ -5357,7 +5372,7 @@ Function OutputPoolGeneralOverview
 
 	If ($MSWord -or $PDF)
 	{
-		WriteWordLine 2 0 "General Overview"
+		WriteWordLine 2 0 "General (Overview)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Pool name"; Value = $Script:XSPool.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
@@ -5387,7 +5402,7 @@ Function OutputPoolGeneralOverview
 	}
 	If ($Text)
 	{
-		Line 1 "General Overview"
+		Line 1 "General (Overview)"
 		Line 2 "Pool name`t`t: " $Script:XSPool.name_label
 		Line 2 "Description`t`t: " $Script:XSPool.name_description
 		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
@@ -5402,7 +5417,7 @@ Function OutputPoolGeneralOverview
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
-		WriteHTMLLine 2 0 "General Overview"
+		WriteHTMLLine 2 0 "General (Overview)"
 		$rowdata = @()
 		$columnHeaders = @("Pool name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
@@ -5722,7 +5737,7 @@ Function OutputPoolGeneral
 
 	If ($MSWord -or $PDF)
 	{
-		WriteWordLine 2 0 "General"
+		WriteWordLine 2 0 "General (Properties)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $Script:XSPool.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
@@ -5748,7 +5763,7 @@ Function OutputPoolGeneral
 	}
 	If ($Text)
 	{
-		Line 1 "General"
+		Line 1 "General (Properties)"
 		Line 2 "Name       : " $Script:XSPool.name_label
 		Line 2 "Description: " $Script:XSPool.name_description
 		Line 2 "Folder     : " $folderName
@@ -5760,7 +5775,7 @@ Function OutputPoolGeneral
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
-		WriteHTMLLine 2 0 "General"
+		WriteHTMLLine 2 0 "General (Properties)"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
@@ -8845,13 +8860,14 @@ Function OutputHostGeneralOverview
 		$AgentUptime.Hours,
 		$AgentUptime.Minutes)
 
-	If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
+	#If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
+	If($XSHost.Other_Config.Keys -contains "folder") #added by Webster
 	{
-		$folderName = "<None>"
+		$folderName = $XSHost.Other_Config["folder"]
 	}
 	Else
 	{
-		$folderName = $XSHost.Other_Config["folder"]
+		$folderName = "<None>"
 	}
 
 	If ($XSHost.name_description -eq "Default install")
@@ -8881,6 +8897,7 @@ Function OutputHostGeneralOverview
 		}
 		
 		WriteWordLine 2 0 "Host: $($XSHost.name_label)"
+		WriteWordLIne 3 0 "General (Overview)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $XSHostDescription; }
@@ -8916,17 +8933,18 @@ Function OutputHostGeneralOverview
 	If ($Text)
 	{
 		Line 1 "Name: " "$($XSHost.name_label)"
-		Line 2 "Description`t`t: " $XSHostDescription
-		Line 2 "Tags`t`t`t: " "$($xtags -join ", ")"
-		Line 2 "Folder`t`t`t: " $folderName
-		Line 2 "Pool master`t`t: " $IAmThePoolMaster
-		Line 2 "Enabled`t`t`t: " $XSHostenabled
-		Line 2 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
-		Line 2 "Log destination`t`t: " $LogLocation
-		Line 2 "Server uptime`t`t: " $ServerUptimeString
-		Line 2 "Toolstack uptime`t: " $AgentUptimeString
-		Line 2 "Domain`t`t`t: " $XSHost.external_auth_service_name
-		Line 2 "UUID`t`t`t: " $XSHost.uuid
+		Line 2 "General (Overview)"
+		Line 3 "Description`t`t: " $XSHostDescription
+		Line 3 "Tags`t`t`t: " "$($xtags -join ", ")"
+		Line 3 "Folder`t`t`t: " $folderName
+		Line 3 "Pool master`t`t: " $IAmThePoolMaster
+		Line 3 "Enabled`t`t`t: " $XSHostenabled
+		Line 3 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
+		Line 3 "Log destination`t`t: " $LogLocation
+		Line 3 "Server uptime`t`t: " $ServerUptimeString
+		Line 3 "Toolstack uptime`t: " $AgentUptimeString
+		Line 3 "Domain`t`t`t: " $XSHost.external_auth_service_name
+		Line 3 "UUID`t`t`t: " $XSHost.uuid
 		Line 0 ""
 	}
 	If ($HTML)
@@ -8935,6 +8953,7 @@ Function OutputHostGeneralOverview
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
 		WriteHTMLLine 2 0 "Host: $($XSHost.name_label)"
+		WriteHTMLLine 3 0 "General (Overview)"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $XSHost.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $XSHostDescription, $htmlwhite))
@@ -9545,7 +9564,7 @@ Function OutputHostGeneral
 	
 	If ($MSWord -or $PDF)
 	{
-		WriteWordLine 3 0 "General"
+		WriteWordLine 3 0 "General (Properties)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
 		$ScriptInformation += @{ Data = "Name"; Value = $XSHost.name_label; }
 		$ScriptInformation += @{ Data = "Description"; Value = $XSHostDescription; }
@@ -9573,7 +9592,7 @@ Function OutputHostGeneral
 	}
 	If ($Text)
 	{
-		Line 2 "General"
+		Line 2 "General (Properties)"
 		Line 3 "Description`t`t: " $XSHostDescription
 		Line 3 "Folder`t`t`t: " $folderName
 		Line 3 "Tags`t`t`t: " "$($xtags -join ", ")"
@@ -9585,7 +9604,7 @@ Function OutputHostGeneral
 		#for HTML output, remove the < and > from <None> xtags and foldername if they are there
 		$xtags = $xtags.Trim("<", ">")
 		$folderName = $folderName.Trim("<", ">")
-		WriteHTMLLine 3 0 "General"
+		WriteHTMLLine 3 0 "General (Properties)"
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $XSHost.name_label, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $XSHostDescription, $htmlwhite))
@@ -12217,7 +12236,6 @@ Function OutputSharedStorageStatus
 		WriteHTMLLine 0 0 ""
 	}
 }
-
 #endregion SharedStorage
 
 #region VMs
@@ -12288,15 +12306,19 @@ Function ProcessVMs
 				$VMHost = "N/A"
 			}
 		}#>
-		OutputVM $VM $VMOSName $VMHost $VMFirst
+		OutputVMGeneralOverview $VM $VMOSName $VMHost $VMFirst
+		OutputVMGeneralBootOptions $VM
+		OutputVMGeneralCPU $VM
+		OutputVMGeneralReadCaching $VM
+		OutputVMGeneral $VM $VMOSName $VMHost $VMFirst
 		OutputVMCustomFields $VM
 		OutputVMCPU $VM
 		OutputVMBootOptions $VM
 		OutputVMStartOptions $VM
 		OutputVMAlerts $VM
+		OutputVMHomeServer $VM
 		OutputVMGPU $VM
 		OutputVMAdvancedOptions $VM
-		OutputVMHomeServer $VM
 		OutputVMStorage $VM $VMHost
 		OutputVMNIC $VM
 		OutputVMSnapshots $VM
@@ -12304,12 +12326,375 @@ Function ProcessVMs
 	}
 }
 
-Function OutputVM
+Function OutputVMGeneralOverview
+{
+	Param([object]$VM, [string]$VMOSName, [string]$VMHost, [bool]$VMFirst)
+	
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General Overview"
+	If ($VMOSName -ne "Unknown")
+	{
+		#remove the pipe symbol from the $VMOSName variable
+		$pos = -1
+		$pos = $VMOSName.IndexOf('|')
+		If ($pos -gt -1)
+		{
+			$VMOSName = $VMOSName.SubString(0, $pos)
+		}
+	}
+
+	[array]$xtags = @()
+	ForEach ($tag in $VM.tags)
+	{
+		$xtags += $tag
+	}
+	If ($xtags.count -gt 0)
+	{
+		[array]$xtags = $xtags | Sort-Object
+	}
+	Else
+	{
+		[array]$xtags = @("<None>")
+	}
+
+	If($VM.other_config.Keys -contains "folder") #added by Webster
+	{
+		$folderName = $VM.Other_Config["folder"]
+	}
+	Else
+	{
+		$folderName = "<None>"
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		If ($VMFirst -eq $False)
+		{
+			#Put the 2nd VM on, on a new page
+			$Selection.InsertNewPage()
+		}
+		
+		WriteWordLine 2 0 "VM: $($VM.name_label)"
+		WriteWordLIne 3 0 "General (Overview)"
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Name"; Value = $($VM.name_label); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($VM.name_description); }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", "); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
+		$ScriptInformation += @{ Data = "Operating System"; Value = $VMOSName; }
+		$ScriptInformation += @{ Data = "Virtualization mode"; Value = ""; }
+		$ScriptInformation += @{ Data = "BIOS strings copied"; Value = ""; }
+		$ScriptInformation += @{ Data = "Virtualization state"; Value = ""; }
+		$ScriptInformation += @{ Data = "Time since startup"; Value = ""; }
+		$ScriptInformation += @{ Data = "UUID"; Value = $($VM.uuid); }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 1 "Name: " $($VM.name_label)
+		Line 2 "General (Overview)"
+		Line 3 "Description         : " $($VM.name_description)
+		Line 3 "Tags                : " "$($xtags -join ", ")"
+		Line 3 "Folder              : " $folderName
+		Line 3 "Operating System    : " $VMOSName
+		Line 3 "Virtualization mode : " ""
+		Line 3 "BIOS strings copied : " ""
+		Line 3 "Virtualization state: " ""
+		Line 3 "Time since startup  : " ""
+		Line 3 "UUID                : " $($VM.uuid)
+
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$xtags = $xtags.Trim("<", ">")
+		$folderName = $folderName.Trim("<", ">")
+		WriteHTMLLine 2 0 "VM: $($VM.name_label)"
+		WriteHTMLLIne 3 0 "General (Overview)"
+		$rowdata = @()
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($VM.name_label), $htmlwhite)
+		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $($VM.name_description), $htmlwhite))
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
+		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), "$folderName", $htmlwhite))
+		$rowdata += @(, ('Operating System', ($htmlsilver -bor $htmlbold), $VMOSName, $htmlwhite))
+		$rowdata += @(, ("Virtualization mode", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+		$rowdata += @(, ("BIOS strings copied", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+		$rowdata += @(, ("Virtualization state", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+		$rowdata += @(, ("Time since startup", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+		$rowdata += @(, ("UUID", ($htmlsilver -bor $htmlbold), $($VM.uuid), $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+}
+
+Function OutputVMGeneralBootOptions
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General Boot Options"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Boot Options"
+	}
+	If ($Text)
+	{
+		Line 2 "Boot Options"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Boot Options"
+	}
+
+	$bootorder = $vm.HVM_boot_params["order"].Replace("c", "Disk;").Replace("d", "DVD-drive;").Replace("n", "Network;").TrimEnd(";").Split(";")
+	for ($c = 1 ; $c -le $bootorder.count ; $c++)
+	{
+		$bootorder[$c - 1] = "[$c] $($bootorder[$c-1])"
+	}
+
+	If($VM.HVM_boot_params.Keys -contains "firmware") #added by Webster
+	{
+		$BootMode = "$($VM.HVM_boot_params['firmware'].ToUpper()) Boot"
+	}
+	Else
+	{
+		$BootMode = "BIOS Boot" #assume BIOS Boot if the Key does not exist
+	}
+
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Boot order"; Value = $($bootorder -join ", "); }
+		$ScriptInformation += @{ Data = "Boot mode"; Value = $BootMode; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Boot order: " $($bootorder -join ", ")
+		Line 3 "Boot mode : " $BootMode
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Boot order", ($htmlsilver -bor $htmlbold), $($bootorder -join ", "), $htmlwhite)
+		$rowdata += @(, ('Boot mode', ($htmlsilver -bor $htmlbold), $BootMode, $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLine 0 0 ""
+	}
+	
+}
+
+Function OutputVMGeneralCPU
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General CPUs"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "CPUs"
+	}
+	If ($Text)
+	{
+		Line 2 "CPUs"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "CPUs"
+	}
+	#from the XS team
+	#the topology is in the VM's platform property, key cores-per-socket
+	#VCPUs_at_startup	8
+	#VCPUs_max		8
+
+	If ($null -eq $($vm.platform["cores-per-socket"]))
+	{
+		$vCPUcoreText = "1 core"
+	}
+	ElseIf ($vm.platform["cores-per-socket"] -gt 1)
+	{
+		$vCPUcoreText = "$($vm.platform["cores-per-socket"]) cores"
+	}
+	Else
+	{
+		$vCPUcoreText = "$($vm.platform["cores-per-socket"]) core"
+	}
+
+	try
+	{
+		If($VM.platform.keys -contains "cores-per-socket") #added by Webster
+		{
+			$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
+		}
+		Else
+		{
+			$sockets = [int]$VM.VCPUs_max #assume that cores per socket is one if the Key does not exist
+		}
+		
+		If ($sockets -gt 1)
+		{
+			$vCPUText = "$sockets sockets with $vCPUcoreText each"
+		}
+		Else
+		{
+			$vCPUText = "$sockets socket with $vCPUcoreText"
+		}
+	}
+	catch
+	{
+		$vCPUText = "$($VM.VCPUs_max) ($vCPUcoreText per socket)"
+	}
+	
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Virtual CPUs"; Value = "$($VM.VCPUs_max)"; }
+		$ScriptInformation += @{ Data = "Topology"; Value = $vCPUText; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 150;
+		$Table.Columns.Item(2).Width = 250;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Virtual CPUs: " "$($VM.VCPUs_max)"
+		Line 3 "Topology    : " $vCPUText
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Virtual CPUs", ($htmlsilver -bor $htmlbold), "$($VM.VCPUs_max)", $htmlwhite)
+		$rowdata += @(, ("Topology", ($htmlsilver -bor $htmlbold), $vCPUText, $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("150", "250")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
+	}
+}
+
+Function OutputVMGeneralReadCaching
+{
+	Param([object] $VM)
+	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General Read Caching"
+
+	If ($MSWord -or $PDF)
+	{
+		WriteWordLine 3 0 "Read Caching"
+	}
+	If ($Text)
+	{
+		Line 2 "Read Caching"
+	}
+	If ($HTML)
+	{
+		WriteHTMLLine 3 0 "Read Caching"
+	}
+
+	#WEBSTER: The output text is hardcoded so I could see how wide to make the columns
+	#WEBSTER: I'll let JB handle getting this data
+	If ($MSWord -or $PDF)
+	{
+		[System.Collections.Hashtable[]] $ScriptInformation = @()
+		$ScriptInformation += @{ Data = "Status"; Value = "This VM is not using read caching"; }
+		$ScriptInformation += @{ Data = "Reason"; Value = "This VM does not have any read-only disks or disks with a read-only parent"; }
+
+		$Table = AddWordTable -Hashtable $ScriptInformation `
+			-Columns Data, Value `
+			-List `
+			-Format $wdTableGrid `
+			-AutoFit $wdAutoFitFixed;
+
+		## IB - Set the header row format
+		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
+
+		$Table.Columns.Item(1).Width = 50;
+		$Table.Columns.Item(2).Width = 350;
+
+		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
+
+		FindWordDocumentEnd
+		$Table = $Null
+		WriteWordLine 0 0 ""
+	}
+	If ($Text)
+	{
+		Line 3 "Status: " "This VM is not using read caching"
+		Line 3 "Reason: " "This VM does not have any read-only disks or disks with a read-only parent"
+		Line 0 ""
+	}
+	If ($HTML)
+	{
+		$rowdata = @()
+		$columnHeaders = @("Status", ($htmlsilver -bor $htmlbold), "This VM is not using read caching", $htmlwhite)
+		$rowdata += @(, ("Reason", ($htmlsilver -bor $htmlbold), "This VM does not have any read-only disks or disks with a read-only parent", $htmlwhite))
+
+		$msg = ""
+		$columnWidths = @("50", "350")
+		FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
+		WriteHTMLLIne 0 0 ""
+	}
+}
+
+Function OutputVMGeneral
 {
 	Param([object]$VM, [string]$VMOSName, [string]$VMHost, [bool]$VMFirst)
 	
 	Write-Verbose "$(Get-Date -Format G): `t`tOutput VM General"
-	If ($VMOSName -ne "Unknown")
+	<#If ($VMOSName -ne "Unknown")
 	{
 		#remove the pipe symbol from the $VMOSName variable
 		$pos = -1
@@ -12393,6 +12778,30 @@ Function OutputVM
 	{
 		$BootMode = "BIOS Boot" #assume BIOS Boot if the Key does not exist
 	}
+	#>
+	
+	[array]$xtags = @()
+	ForEach ($tag in $VM.tags)
+	{
+		$xtags += $tag
+	}
+	If ($xtags.count -gt 0)
+	{
+		[array]$xtags = $xtags | Sort-Object
+	}
+	Else
+	{
+		[array]$xtags = @("<None>")
+	}
+
+	If($VM.other_config.Keys -contains "folder") #added by Webster
+	{
+		$folderName = $VM.Other_Config["folder"]
+	}
+	Else
+	{
+		$folderName = "<None>"
+	}
 
 	If ($MSWord -or $PDF)
 	{
@@ -12402,27 +12811,12 @@ Function OutputVM
 			$Selection.InsertNewPage()
 		}
 		
-		WriteWordLine 2 0 "VM: $($VM.name_label)"
+		WriteWordLine 3 0 "General (Properties)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		$ScriptInformation += @{ Data = "VM name"; Value = $($VM.name_label); }
-		$ScriptInformation += @{ Data = "Xen host name"; Value = $VMHost; }
-		$ScriptInformation += @{ Data = "VM Operating System"; Value = $VMOSName; }
-		$ScriptInformation += @{ Data = "Number of vCPUs"; Value = $VCPUText; }
-
-		If ($xenVMDynamicMemory)
-		{
-			$ScriptInformation += @{ Data = "Dynamic Memory"; Value = "True (DEPRECATED!)"; }
-			$ScriptInformation += @{ Data = "Minimum Memory"; Value = $xenVmMemMin; }
-			$ScriptInformation += @{ Data = "Maximum Memory"; Value = $xenVmMemMax; }
-		}
-		Else
-		{
-			$ScriptInformation += @{ Data = "Memory"; Value = $xenVmMem; }
-		}
-		$ScriptInformation += @{ Data = "Boot order"; Value = $($bootorder -join ", "); }
-		#$ScriptInformation += @{ Data = "Boot mode"; Value = $VM.HVM_boot_params["firmware"].ToUpper(); }
-		$ScriptInformation += @{ Data = "Boot mode"; Value = $BootMode; }
-		$ScriptInformation += @{ Data = "Secure boot"; Value = $xenVMSecureBoot; }
+		$ScriptInformation += @{ Data = "Name"; Value = $($VM.name_label); }
+		$ScriptInformation += @{ Data = "Description"; Value = $($VM.name_description); }
+		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
+		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", "); }
 
 		$Table = AddWordTable -Hashtable $ScriptInformation `
 			-Columns Data, Value `
@@ -12444,51 +12838,23 @@ Function OutputVM
 	}
 	If ($Text)
 	{
-		Line 1 "VM name: " $($VM.name_label)
-		Line 2 "Xen host name`t`t: " $VMHost
-		Line 2 "VM Operating System`t: " $VMOSName
-		Line 2 "Number of vCPUs`t`t: " $VCPUText
-
-		If ($xenVMDynamicMemory)
-		{
-			Line 2 "Dynamic Memory`t`t: " "True (DEPRECATED!)"
-			Line 2 "Minimum Memory`t`t: " $xenVmMemMin
-			Line 2 "Maximum Memory`t`t: " $xenVmMemMax
-		}
-		Else
-		{
-			Line 2 "Memory`t`t`t: " $xenVmMem
-		}
-		Line 2 "Boot order`t`t: " $($bootorder -join ", ")
-		#Line 2 "Boot mode`t`t: " $VM.HVM_boot_params["firmware"].ToUpper()
-		Line 2 "Boot mode`t`t: " $BootMode
-		Line 2 "Secure boot`t`t: " $xenVMSecureBoot
-
+		Line 2 "General (Properties)"
+		Line 3 "Name       : " $($VM.name_label)
+		Line 3 "Description: " $($VM.name_description)
+		Line 3 "Folder     : " $folderName
+		Line 3 "Tags       : " "$($xtags -join ", ")"
 		Line 0 ""
 	}
 	If ($HTML)
 	{
-		WriteHTMLLine 2 0 "VM: $($VM.name_label)"
+		$xtags = $xtags.Trim("<", ">")
+		$folderName = $folderName.Trim("<", ">")
+		WriteHTMLLine 3 0 "General (Properties)"
 		$rowdata = @()
-		$columnHeaders = @("VM name", ($htmlsilver -bor $htmlbold), $($VM.name_label), $htmlwhite)
-		$rowdata += @(, ('Xen host name', ($htmlsilver -bor $htmlbold), $VMHost, $htmlwhite))
-		$rowdata += @(, ('VM Operating System', ($htmlsilver -bor $htmlbold), $VMOSName, $htmlwhite))
-		$rowdata += @(, ('Number of vCPUs', ($htmlsilver -bor $htmlbold), $VCPUText, $htmlwhite))
-
-		If ($xenVMDynamicMemory)
-		{
-			$rowdata += @(, ('Dynamic Memory', ($htmlsilver -bor $htmlbold), "True (DEPRECATED!)", $htmlwhite))
-			$rowdata += @(, ('Minimum Memory', ($htmlsilver -bor $htmlbold), $xenVmMemMin, $htmlwhite))
-			$rowdata += @(, ('Maximum Memory', ($htmlsilver -bor $htmlbold), $xenVmMemMax, $htmlwhite))
-		}
-		Else
-		{
-			$rowdata += @(, ('Memory', ($htmlsilver -bor $htmlbold), $xenVmMem, $htmlwhite))
-		}
-		$rowdata += @(, ('Boot order', ($htmlsilver -bor $htmlbold), $($bootorder -join ", "), $htmlwhite))
-		#$rowdata += @(, ('Boot mode', ($htmlsilver -bor $htmlbold), $VM.HVM_boot_params["firmware"].ToUpper(), $htmlwhite))
-		$rowdata += @(, ('Boot mode', ($htmlsilver -bor $htmlbold), $BootMode, $htmlwhite))
-		$rowdata += @(, ('Secure boot', ($htmlsilver -bor $htmlbold), $xenVMSecureBoot, $htmlwhite))
+		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($VM.name_label), $htmlwhite)
+		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $($VM.name_description), $htmlwhite))
+		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), "$folderName", $htmlwhite))
+		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 
 		$msg = ""
 		$columnWidths = @("150", "250")
@@ -12749,7 +13115,7 @@ Function OutputVMCPU
 		SetWordCellFormat -Collection $Table.Columns.Item(1).Cells -Bold -BackgroundColor $wdColorGray15;
 
 		$Table.Columns.Item(1).Width = 200;
-		$Table.Columns.Item(2).Width = 150;
+		$Table.Columns.Item(2).Width = 200;
 
 		$Table.Rows.SetLeftIndent($Indent0TabStops, $wdAdjustProportional)
 
@@ -14016,7 +14382,7 @@ Function OutputVMNIC
 		}
 		If ($Text)
 		{
-			Line 3 "Number of NICs`t`t: " "$nrVIFs"
+			Line 3 "Number of NICs: " "$nrVIFs"
 			Line 0 ""
 		}
 		If ($HTML)
@@ -14038,11 +14404,11 @@ Function OutputVMNIC
 			If ($Text)
 			{
 				Line 3 "Device: " "$($Item.device)"
-				Line 4 "MAC address`t`t: " "$($Item.MAC)"
-				Line 4 "MAC autogenerated`t: " "$($Item.MACautogenerated)"
-				Line 4 "Limit`t`t`t: " "$($Item.limit)"
-				Line 4 "IP Address`t`t: " "$($Item.IPAddress)"
-				Line 4 "Active`t`t`t: " "$($Item.Active)"
+				Line 4 "MAC address      : " "$($Item.MAC)"
+				Line 4 "MAC autogenerated: " "$($Item.MACautogenerated)"
+				Line 4 "Limit            : " "$($Item.limit)"
+				Line 4 "IP Address       : " "$($Item.IPAddress)"
+				Line 4 "Active           : " "$($Item.Active)"
 			}
 			If ($HTML)
 			{
@@ -14351,7 +14717,6 @@ Function OutputVMSnapshots
 		}
 	}
 }
-
 #endregion VMs
 
 #region script core
@@ -14372,14 +14737,7 @@ Else
 	SetFileNames "$($Script:XSPool.name_label)"
 }
 
-If ($Null -eq $Script:XSPool.name_label)
-{
-	[string]$Script:Title = "Inventory Report for the XenServer Host: $($Script:XSHosts[0].hostname)"
-}
-Else
-{
-	[string]$Script:Title = "Inventory Report for the XenServer Pool: $($Script:XSPool.name_label)"
-}
+#[string]$Script:Title = "Inventory Report for the XenServer Pool: $($Script:XSPool.name_label)"
 
 Write-Verbose "$(Get-Date -Format G): Start writing report data"
 
