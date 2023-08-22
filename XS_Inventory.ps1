@@ -463,9 +463,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.025
+	VERSION: 0.026
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: August 20, 2023
+	LASTEDIT: August 22, 2023
 #>
 
 #endregion
@@ -589,20 +589,26 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
+#.026
+#	In Function OutputVMGeneralOverview, add the following for both Windows and Linux VMs: (Webster)
+#		Virtualization mode
+#		BIOS strings copied
+#		Virtualization state
+#		Time since startup
+#
 #.025
-#	Added some missing section headings in the host output
-#	Copied Function OutputVM to OutputVMGeneralOverview
+#	Added some missing section headings in the host output (Webster)
+#	Copied Function OutputVM to OutputVMGeneralOverview (Webster)
 #		Altered Function OutputVMGeneralOverview data to match VM General Properties, General
-#	Copied Function OutputVMBootOptions to OutputVMGeneralBootOptions
+#	Copied Function OutputVMBootOptions to OutputVMGeneralBootOptions (Webster)
 #		Altered Function OutputVMGeneralBootOptions data to match VM General Properties, Boot Options
-#	Copied Function OutputVMCPU to OutputVMGeneralCPU
+#	Copied Function OutputVMCPU to OutputVMGeneralCPU (Webster)
 #		Altered Function OutputVMGeneralCPU data to match VM General Properties, CPUs
-#	Create stub holder Function OutputVMGeneralReadCaching
-#	Fixed the report title for Word/PDF output
-#	For Pool, Host, and VM General output headings, add "General (Overview)" and "General (Properties)"
-#	
-#	Renamed Function OutputVM to OutputVMGeneral
-#	Reordered the VM functions to match the output order in the console
+#	Create stub holder Function OutputVMGeneralReadCaching (Webster)
+#	Fixed the report title for Word/PDF output (Webster)
+#	For Pool, Host, and VM General output headings, add "General (Overview)" and "General (Properties)" (Webster)
+#	Renamed Function OutputVM to OutputVMGeneral (Webster)
+#	Reordered the VM functions to match the output order in the console (Webster)
 #
 #.024
 #	In Function ProcessScriptSetup, add getting Workload Balancing data (Webster)
@@ -967,9 +973,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.025'
+$script:MyVersion = '0.026'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "08/20/2023"
+$tmpdate = [datetime] "08/22/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -12365,6 +12371,206 @@ Function OutputVMGeneralOverview
 		$folderName = "<None>"
 	}
 
+	#Calculate Time since startup
+	#Thanks to the XS team for the help
+	$VMStartTime = (Get-XenVM -uuid $VM.uuid | `
+		Select-Object -ExpandProperty metrics | `
+		Get-XenVMMetrics | `
+		Select-Object start_time).start_time.ToUniversalTime()
+
+	$CurrentTime = (Get-Date).ToUniversalTime()
+	$TimeSinceStartup = $CurrentTime - $VMStartTime
+	$TimeSinceStartupString = [string]::format("{0} days {1} hours {2} minutes",
+		$TimeSinceStartup.Days,
+		$TimeSinceStartup.Hours,
+		$TimeSinceStartup.Minutes)
+	
+	#Calculate BIOS strings copied
+	#Thanks to the XS team for the help
+	#If VM.bios_strings is empty or if bios-vendor and system-manufacturer are both Xen, it's No
+	If(($null -eq $VM.bios_strings) -or `
+		($($VM.bios_strings["bios-vendor"]) -eq "xen") -and `
+		($($VM.bios_strings["system-manufacturer"]) -eq "xen")
+	   )
+	{
+		$BIOSStringsCopied = "No"
+	}
+	Else
+	{
+		$BIOSStringsCopied = "Yes"
+	}
+
+	<#
+		How do I get the three items for the Virtualization state:
+		I/O optimized
+		Management Agent installed
+		Able to receive updates from Windows Update
+		5 replies
+
+		From the XS team
+		
+		XenCenter has a ridiculously complex algorithm to deduce this, 
+		but the essence of it is that for the latest server versions 
+		a VM can have the following virtualisation states:
+		
+		Linux
+		  Tools not installed
+		  Tools unknown
+		  Tools out of date
+		  Tools installed (Optimized)
+		Windows
+		   Tools not installed
+		   Tools unknown
+		   I/O Optimized
+		   I/O and Management installed
+
+		For windows
+		get-xenvm -uuid xx | `
+			select -expandproperty guest_metrics | `
+			Get-XenVMGuestMetrics | `
+			select PV_drivers_detected 
+		deduces if IO is installed
+		
+		then 
+		$other = get-xenvm -uuid <uuid> | `
+			select -expandproperty guest_metrics | `
+			Get-XenVMGuestMetrics | `
+			select -ExpandProperty other
+		
+		and if $other["feature-static-ip-setting"] is not 0, then management is installed
+		If none of them are there, XC says that tools are not installed - 
+		but only if a certain amount of time (2min) has elapsed since start time, 
+		because the tools may take a while to show up; 
+		within this interval XC says that the tools state is unknown
+
+		For Linux
+		get-xenvm -uuid xxx | `
+			select -expandproperty guest_metrics | `
+			Get-XenVMGuestMetrics | `
+			select PV_drivers_version  
+		
+		if the major and minor are missing or 0, tools are considered not installed, 
+		but again only after those 2 min have passed - before that it's unknown
+		
+		get-xenvm -uuid <uuid> | `
+			select -expandproperty guest_metrics | `
+			Get-XenVMGuestMetrics | `
+			select PV_drivers_up_to_date 
+		is self explanatory	
+	#>
+	
+	#calculate the three virtualization state options
+	If($VMOSName -like "*windows*")
+	{
+		#Is IO installed
+		$IsIOInstalled = (Get-XenVM -uuid $VM.uuid | `
+			Select-Object -ExpandProperty guest_metrics | `
+			Get-XenVMGuestMetrics | `
+			Select-Object PV_drivers_detected).PV_drivers_detected
+		
+		If($IsIOInstalled)
+		{
+			$IsIOInstalledString = "I/O optimized"
+		}
+		Else
+		{
+			$IsIOInstalledString = "I/O not optimized"
+		}
+		
+		#Is the management agent installed
+		$other = Get-XenVM -uuid $VM.uuid | `
+			Select-Object -ExpandProperty guest_metrics | `
+			Get-XenVMGuestMetrics | `
+			Select-Object -ExpandProperty other
+			
+		If($Other["feature-static-ip-setting"] -eq 0)
+		{
+			$IsMgmtAgentInstalled = "Management Agent not installed"
+		}
+		Else
+		{
+			$IsMgmtAgentInstalled = "Management Agent installed"
+		}
+		
+		#Can VM receive updates from windows updates
+		If($VM.has_vendor_device)
+		{
+			$CanReceiveUpdatesFromWindows = "Able to receive updates from Windows Update"
+		}
+		Else
+		{
+			$CanReceiveUpdatesFromWindows = "Unable to receive updates from Windows Update"
+		}
+	}
+	Else
+	{
+		$PVVersion = (Get-XenVM -uuid $VM.uuid | `
+			Select-Object -ExpandProperty guest_metrics | `
+			Get-XenVMGuestMetrics | `
+			Select-Object PV_drivers_version).PV_drivers_version
+		
+		If($PVVersion.Count -eq 0 -or ($PVVersion.bios_strings.keys -contains "bios-vendor" -eq $False))
+		{
+			$LinuxVirtState = "Citrix VM Tools not installed"
+		}
+		ElseIf($PVVersion.bios_strings.keys -contains "bios-vendor")
+		{
+			$Major = $PVVersion.Major
+			$Minor = $PVVersion.Minor
+			
+			If($Major -eq 0 -and $Minor -eq 0)
+			{
+				$LinuxVirtState = "Citrix VM Tools not installed"
+			}
+			Else
+			{
+				$PVUpToDate = (Get-XenVM -uuid $VM.uuid | `
+					Select-Object -ExpandProperty guest_metrics | `
+					Get-XenVMGuestMetrics | `
+					Select-Object PV_drivers_up_to_date).PV_drivers_up_to_date
+				
+				If($PVUpToDate)
+				{
+					$LinuxVirtState = "Optimized `(version $Major.$Minor installed`)"
+				}
+				Else
+				{
+					$LinuxVirtState = "Tools out of date `(version $Major.$Minor installed`)"
+				}
+			}
+		}
+		Else
+		{
+		}
+	}
+	
+	<#
+		Virtualization mode
+		
+		For a Windows or Linux VM, what are the possible values for:
+		domain_type                 : hvm
+		From a VM's VM General Properties, General, I assume "hvm" equals "Hardware-assisted Virtualization (HVM)"?
+
+		hvm, pv, pv_in_pvh, pvh, unspecified, unknown
+		These are the API values, the SDK also adds usually unknown to each enum as a default
+		Description of each value can be found at the top of the russian language site (Webster: that is an inside joke)
+		http://xapi-project.github.io/xen-api/classes/vm.html
+		An easy way to find the values of an enum is to type at the PS prompt [XenAPI.domain_type]:: 
+		and cycle with the tab key
+	#>
+	
+	Switch ($VM.domain_type)
+	{
+		"hvm"		{$Virtualizationmode = "Hardware-assisted Virtualization (HVM)"; Break}
+		"pv"		{$Virtualizationmode = "PV: Paravirtualized"; Break}
+		"pv_in_pvh"	{$Virtualizationmode = "PV inside a PVH container"; Break}
+		"pvh"		{$Virtualizationmode = "PVH"; Break}
+		"unspecified"	{$Virtualizationmode = "Unspecified"; Break}
+		"unknown"	{$Virtualizationmode = "Unknown"; Break}
+		Default		{$Virtualizationmode = "Unable to determine the Virtuaization mode: $($VM.domain_type)"; Break}
+	}
+	
+	
 	If ($MSWord -or $PDF)
 	{
 		If ($VMFirst -eq $False)
@@ -12381,10 +12587,19 @@ Function OutputVMGeneralOverview
 		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", "); }
 		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
 		$ScriptInformation += @{ Data = "Operating System"; Value = $VMOSName; }
-		$ScriptInformation += @{ Data = "Virtualization mode"; Value = ""; }
-		$ScriptInformation += @{ Data = "BIOS strings copied"; Value = ""; }
-		$ScriptInformation += @{ Data = "Virtualization state"; Value = ""; }
-		$ScriptInformation += @{ Data = "Time since startup"; Value = ""; }
+		$ScriptInformation += @{ Data = "Virtualization mode"; Value = $Virtualizationmode; }
+		$ScriptInformation += @{ Data = "BIOS strings copied"; Value = $BIOSStringsCopied; }
+		If($VMOSName -like "*windows*")
+		{
+			$ScriptInformation += @{ Data = "Virtualization state"; Value = $IsIOInstalledString; }
+			$ScriptInformation += @{ Data = ""; Value = $IsMgmtAgentInstalled; }
+			$ScriptInformation += @{ Data = ""; Value = $CanReceiveUpdatesFromWindows; }
+		}
+		Else
+		{
+			$ScriptInformation += @{ Data = "Virtualization state"; Value = $LinuxVirtState; }
+		}
+		$ScriptInformation += @{ Data = "Time since startup"; Value = $TimeSinceStartupString; }
 		$ScriptInformation += @{ Data = "UUID"; Value = $($VM.uuid); }
 
 		$Table = AddWordTable -Hashtable $ScriptInformation `
@@ -12413,10 +12628,19 @@ Function OutputVMGeneralOverview
 		Line 3 "Tags                : " "$($xtags -join ", ")"
 		Line 3 "Folder              : " $folderName
 		Line 3 "Operating System    : " $VMOSName
-		Line 3 "Virtualization mode : " ""
-		Line 3 "BIOS strings copied : " ""
-		Line 3 "Virtualization state: " ""
-		Line 3 "Time since startup  : " ""
+		Line 3 "Virtualization mode : " $Virtualizationmode
+		Line 3 "BIOS strings copied : " $BIOSStringsCopied
+		If($VMOSName -like "*windows*")
+		{
+			Line 3 "Virtualization state: " $IsIOInstalledString
+			Line 3 "                      " $IsMgmtAgentInstalled
+			Line 3 "                      " $CanReceiveUpdatesFromWindows
+		}
+		Else
+		{
+			Line 3 "Virtualization state: " $LinuxVirtState
+		}
+		Line 3 "Time since startup  : " $TimeSinceStartupString
 		Line 3 "UUID                : " $($VM.uuid)
 
 		Line 0 ""
@@ -12433,10 +12657,19 @@ Function OutputVMGeneralOverview
 		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), "$folderName", $htmlwhite))
 		$rowdata += @(, ('Operating System', ($htmlsilver -bor $htmlbold), $VMOSName, $htmlwhite))
-		$rowdata += @(, ("Virtualization mode", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
-		$rowdata += @(, ("BIOS strings copied", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
-		$rowdata += @(, ("Virtualization state", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
-		$rowdata += @(, ("Time since startup", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
+		$rowdata += @(, ("Virtualization mode", ($htmlsilver -bor $htmlbold), $Virtualizationmode, $htmlwhite))
+		$rowdata += @(, ("BIOS strings copied", ($htmlsilver -bor $htmlbold), $BIOSStringsCopied, $htmlwhite))
+		If($VMOSName -like "*windows*")
+		{
+			$rowdata += @(, ("Virtualization state", ($htmlsilver -bor $htmlbold), $IsIOInstalledString, $htmlwhite))
+			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), $IsMgmtAgentInstalled, $htmlwhite))
+			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), $CanReceiveUpdatesFromWindows, $htmlwhite))
+		}
+		Else
+		{
+			$rowdata += @(, ("Virtualization state", ($htmlsilver -bor $htmlbold), $LinuxVirtState, $htmlwhite))
+		}
+		$rowdata += @(, ("Time since startup", ($htmlsilver -bor $htmlbold), $TimeSinceStartupString, $htmlwhite))
 		$rowdata += @(, ("UUID", ($htmlsilver -bor $htmlbold), $($VM.uuid), $htmlwhite))
 
 		$msg = ""
