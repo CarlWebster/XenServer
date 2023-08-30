@@ -62,6 +62,7 @@
 	Valid options are:
 		Pool
 		Host
+		SharedStorage
 		VM (Virtual Machines)
 		All
 
@@ -463,9 +464,9 @@
 	text document.
 .NOTES
 	NAME: XS_Inventory.ps1
-	VERSION: 0.026
+	VERSION: 0.027
 	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: August 22, 2023
+	LASTEDIT: August 30, 2023
 #>
 
 #endregion
@@ -588,6 +589,11 @@ Param(
 #@carlwebster on Twitter
 #http://www.CarlWebster.com
 #Created on June 27, 2023
+#
+#.026
+#	In Function OutputVMGeneralOverview, fixed some issues for when some options are not available (JohnB)
+#   Added "(Unlicensed)" to pool name if no License is assigned or available (same as XC) (JohnB)
+#   ReadMe updated (JohnB)
 #
 #.026
 #	In Function OutputVMGeneralOverview, add the following for both Windows and Linux VMs: (Webster)
@@ -973,9 +979,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $Error.Clear()
 
 $Script:emailCredentials = $Null
-$script:MyVersion = '0.026'
+$script:MyVersion = '0.027'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "08/22/2023"
+$tmpdate = [datetime] "08/30/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -1005,12 +1011,12 @@ $ValidSection = $False
 #added a break to handle an invalid section option
 Switch ($Section)
 {
-	"Pool"		{ $ValidSection = $True }
+	"Pool" { $ValidSection = $True }
 	"SharedStorage"	{ $ValidSection = $True }
-	"Host"		{ $ValidSection = $True }
-	"VM"		{ $ValidSection = $True }
-	"All"		{ $ValidSection = $True }
-	Default 	{ $ValidSection = $False; Break}
+	"Host" { $ValidSection = $True }
+	"VM" { $ValidSection = $True }
+	"All" { $ValidSection = $True }
+	Default { $ValidSection = $False; Break }
 }
 
 If ($ValidSection -eq $False)
@@ -4007,7 +4013,7 @@ $Script:Title is attached.
 		}
 		Else
 		{
-			Write-Verbose  "$(Get-Date -Format G): Trying to send email using current user's credentials without SSL"
+			Write-Verbose "$(Get-Date -Format G): Trying to send email using current user's credentials without SSL"
 			Send-MailMessage -Attachments $emailAttachment -Body $emailBody -BodyAsHtml -From $From `
 				-Port $SmtpPort -SmtpServer $SmtpServer -Subject $emailSubject -To $To *>$Null
 		}
@@ -4221,10 +4227,20 @@ Function ProcessScriptSetup
 	Write-Verbose "$(Get-Date -Format G): Retrieve XenServer hosts"
 	$tmptext = "XenServer Hosts"
 	$Script:XSHosts = Get-XenHost -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0
+	$Script:LicenseStatus = ""
 	If ($? -and $Null -ne $Script:XSHosts)
 	{
 		#success
 		$Script:XSHosts = $Script:XSHosts | Sort-Object Name_Label
+		ForEach ($XSHost in $Script:XSHosts)
+		{
+			$licenseExpiryDate = [datetime]::parseexact($XSHost.license_params["expiry"], "yyyyMMddTHH:mm:ssZ", $([cultureinfo]::InvariantCulture))
+			If (($XSHost.license_server["address"] -like "localhost") -or ([String]::IsNullOrEmpty($($XSHost.license_params["license_type"]))) -or ($licenseExpiryDate -lt (Get-Date).AddDays(30)))
+			{
+				$Script:LicenseStatus = " (Unlicensed)"
+			}
+		}
+	
 	}
 	ElseIf ($? -and $Null -eq $Script:XSHosts)
 	{
@@ -4247,6 +4263,7 @@ Function ProcessScriptSetup
 		#success
 		$Script:PoolMasterInfo = ($Script:XSPool | Get-XenPoolProperty -XenProperty master -EA 0)
 		$Script:OtherConfig = ($Script:XSPool | Get-XenPoolProperty -XenProperty OtherConfig -EA 0)
+		$Script:WLBInfo = $null
 		$Script:WLBInfo = ($Script:XSPool | Invoke-XenPool -XenAction RetrieveWlbConfiguration -PassThru -EA 0)
 	}
 	ElseIf ($? -and $Null -eq $Script:XSPool)
@@ -4370,11 +4387,11 @@ Function ProcessScriptSetup
 	{
 		Switch ($Section)
 		{
-			"Pool"		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Pool Only)"; Break }
+			"Pool" { [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Pool Only)"; Break }
 			"SharedStorage"	{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Shared Storage Only)"; Break }
-			"Host"		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Hosts Only)"; Break }
-			"VM"		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (VMs Only"; Break }
-			Default		{ [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Missing a section title for $Section"; Break }
+			"Host" { [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Hosts Only)"; Break }
+			"VM" { [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (VMs Only"; Break }
+			Default { [string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) (Missing a section title for $Section"; Break }
 		}
 	}
 	ElseIf ($Section.Count -gt 1)
@@ -4382,11 +4399,11 @@ Function ProcessScriptSetup
 		[string]$Script:Title = "Citrix XenServer Inventory for the Pool: $($Script:XSPool.name_label) ("
 		Switch ($Section)
 		{
-			"Pool"		{ [string]$Script:Title += "Pool " }
+			"Pool" { [string]$Script:Title += "Pool " }
 			"SharedStorage"	{ [string]$Script:Title += "Shared Storage "; Break }
-			"Host"		{ [string]$Script:Title += "Hosts " }
-			"VM"		{ [string]$Script:Title += "VMs " }
-			Default		{ [string]$Script:Title += "Missing a section title for $Section" }
+			"Host" { [string]$Script:Title += "Hosts " }
+			"VM" { [string]$Script:Title += "VMs " }
+			Default { [string]$Script:Title += "Missing a section title for $Section" }
 		}
 		[string]$Script:Title = $Script:Title.Substring(0, $Script:Title.LastIndexOf(" ")) + ")"
 	}
@@ -4543,7 +4560,7 @@ Function Get-XSCustomFields
 			$Null = $CustomFields.Add($obj1)
 		}
 	}
-	Write-Output  $CustomFields
+	Write-Output $CustomFields
 }
 
 Function Get-XSTags
@@ -4716,12 +4733,12 @@ Function GatherXSPoolMemoryData
 				$powerState = "Off"
 			}
 			$vmData += [PSCustomObject]@{
-				VMText       = $('{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target  -Decimal 1))
+				VMText       = $('{0}: using  {1}' -f $vm.name_label, $(Convert-SizeToString -size $vm.memory_target -Decimal 1))
 				VMName       = $vm.name_label
 				VMPowerState = $powerState
 				VMMemoryMin  = ""
 				VMMemoryMax  = ""
-				VMMemory     = $(Convert-SizeToString -size $vm.memory_target  -Decimal 1)
+				VMMemory     = $(Convert-SizeToString -size $vm.memory_target -Decimal 1)
 			}
 		}
 		$vmData = $vmData | Sort-Object -Property VMName
@@ -5282,25 +5299,27 @@ Function GetXenVMsOnHost
 Function ProcessPool
 {
 	Write-Verbose "$(Get-Date -Format G): Processing the $($Script:XSPool.name_label) Pool"
+	
 	If ($Null -eq $Script:XSPool.name_label)
 	{
 		Return
 	}
 	Else
 	{
+		$poolName = '{0}{1}' -f $Script:XSPool.name_label,$Script:LicenseStatus
 		If ($MSWord -or $PDF)
 		{
 			$Selection.InsertNewPage()
-			WriteWordLine 1 0 "$($Script:XSPool.name_label) Pool"
+			WriteWordLine 1 0 "$($poolName) Pool"
 		}
 		If ($Text)
 		{
-			Line 0 "$($Script:XSPool.name_label) Pool"
+			Line 0 "$($poolName) Pool"
 			Line 0 ""
 		}
 		If ($HTML)
 		{
-			WriteHTMLLine 1 0 "$($Script:XSPool.name_label) Pool"
+			WriteHTMLLine 1 0 "$($poolName) Pool"
 		}
 		
 		OutputPoolGeneralOverview
@@ -5375,12 +5394,13 @@ Function OutputPoolGeneralOverview
 		$folderName = $Script:XSPool.Other_Config["folder"]
 	}
 
+	$poolName = '{0}{1}' -f $Script:XSPool.name_label,$Script:LicenseStatus
 
 	If ($MSWord -or $PDF)
 	{
 		WriteWordLine 2 0 "General (Overview)"
 		[System.Collections.Hashtable[]] $ScriptInformation = @()
-		$ScriptInformation += @{ Data = "Pool name"; Value = $Script:XSPool.name_label; }
+		$ScriptInformation += @{ Data = "Pool name"; Value = $poolName; }
 		$ScriptInformation += @{ Data = "Description"; Value = $Script:XSPool.name_description; }
 		$ScriptInformation += @{ Data = "Tags"; Value = $($xtags -join ", ") }
 		$ScriptInformation += @{ Data = "Folder"; Value = $folderName; }
@@ -5409,7 +5429,7 @@ Function OutputPoolGeneralOverview
 	If ($Text)
 	{
 		Line 1 "General (Overview)"
-		Line 2 "Pool name`t`t: " $Script:XSPool.name_label
+		Line 2 "Pool name`t`t: " $poolName
 		Line 2 "Description`t`t: " $Script:XSPool.name_description
 		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
 		Line 2 "Folder`t`t`t: " $folderName
@@ -5425,7 +5445,7 @@ Function OutputPoolGeneralOverview
 		$folderName = $folderName.Trim("<", ">")
 		WriteHTMLLine 2 0 "General (Overview)"
 		$rowdata = @()
-		$columnHeaders = @("Pool name", ($htmlsilver -bor $htmlbold), $Script:XSPool.name_label, $htmlwhite)
+		$columnHeaders = @("Pool name", ($htmlsilver -bor $htmlbold), $poolName, $htmlwhite)
 		$rowdata += @(, ('Description', ($htmlsilver -bor $htmlbold), $Script:XSPool.name_description, $htmlwhite))
 		$rowdata += @(, ('Tags', ($htmlsilver -bor $htmlbold), "$($xtags -join ", ")", $htmlwhite))
 		$rowdata += @(, ('Folder', ($htmlsilver -bor $htmlbold), $folderName, $htmlwhite))
@@ -5445,8 +5465,8 @@ Function OutputPoolUpdates
 {
 	Write-Verbose "$(Get-Date -Format G): `tOutput Pool Updates"
 	$Updates = Get-XenPoolPatch -SessionOpaqueRef $Script:Session.Opaque_Ref -EA 0 4>$Null | `
-	Select-Object name_label, version | `
-	Sort-Object name_label
+			Select-Object name_label, version | `
+			Sort-Object name_label
 
 	If ($MSWord -or $PDF)
 	{
@@ -5814,7 +5834,7 @@ Function OutputPoolCustomFields
 		WriteHTMLLine 2 0 "Custom Fields"
 	}
 	
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		$PoolName = $Script:XSPool.Name_Label
 		If ($MSWord -or $PDF)
@@ -6978,7 +6998,7 @@ Function OutputPoolStorageCustomFields
 		WriteHTMLLine 4 0 "Storage Custom Fields"
 	}
 
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -7516,7 +7536,7 @@ Function OutputPoolNetworkCustomFields
 		WriteHTMLLine 4 0 "Network Custom Fields"
 	}
 
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -7940,18 +7960,18 @@ Function OutputPoolWLB
 		WriteHTMLLine 2 0 "WLB"
 	}
 	
-	If ($Script:XSPool.wlb_enabled)
+	If ($null -ne $Script:WLBInfo -and $Script:XSPool.wlb_enabled)
 	{
 		Write-Verbose "$(Get-Date -Format G): `t`tOutput Pool WLB Configuration"
 		
 		Switch ($Script:WLBInfo.OptimizationMode)
 		{
-			0	{$PoolOptimizationMode = "Maximize Performance"; Break}
-			1	{$PoolOptimizationMode = "Maximize Density"; Break}
-			Default	{$PoolOptimizationMode = "Unable to determine Pool optimization mode: $($Script:WLBInfo.OptimizationMode)"; Break}
+			0	{ $PoolOptimizationMode = "Maximize Performance"; Break }
+			1	{ $PoolOptimizationMode = "Maximize Density"; Break }
+			Default	{ $PoolOptimizationMode = "Unable to determine Pool optimization mode: $($Script:WLBInfo.OptimizationMode)"; Break }
 		}
 		
-		If($Script:WLBInfo.AutoBalanceEnabled)
+		If ($Script:WLBInfo.AutoBalanceEnabled)
 		{
 			$AutomatedOptimizations = "Yes"
 		}
@@ -7960,7 +7980,7 @@ Function OutputPoolWLB
 			$AutomatedOptimizations = "No"
 		}
 		
-		If($Script:WLBInfo.PowerManagementEnabled)
+		If ($Script:WLBInfo.PowerManagementEnabled)
 		{
 			$PowerManagementEnabled = "Yes"
 		}
@@ -8087,7 +8107,7 @@ Function OutputPoolWLBSettingsOptimizationMode
 		WriteHTMLLine 3 0 "Optimization Mode"
 	}
 	
-	If($Script:WLBInfo.EnableOptimizationModeSchedules -eq 'true')
+	If ($Script:WLBInfo.EnableOptimizationModeSchedules -eq 'true')
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -8106,7 +8126,7 @@ Function OutputPoolWLBSettingsOptimizationMode
 	}
 	Else
 	{
-		If($Script:WLBInfo.OptimizationMode -eq 0)
+		If ($Script:WLBInfo.OptimizationMode -eq 0)
 		{
 			If ($MSWord -or $PDF)
 			{
@@ -8198,7 +8218,7 @@ Function OutputPoolWLBSettingsAutomation
 		WriteHTMLLine 3 0 "Automation"
 	}
 
-	If($Script:WLBInfo.AutoBalanceEnabled -eq 'true')
+	If ($Script:WLBInfo.AutoBalanceEnabled -eq 'true')
 	{
 		$AutoApplyOptimizations = "Selected"
 	}
@@ -8207,7 +8227,7 @@ Function OutputPoolWLBSettingsAutomation
 		$AutoApplyOptimizations = "Not Selected"
 	}
 	
-	If($Script:WLBInfo.PowerManagementEnabled -eq 'true')
+	If ($Script:WLBInfo.PowerManagementEnabled -eq 'true')
 	{
 		$AutoApplyPowerMgmt = "Selected"
 	}
@@ -8286,11 +8306,11 @@ Function OutputPoolWLBSettingsCriticalThresholds
 	#Disk Write:		HostPbdWriteThresholdCritical / 1024 / 1024
 	[double]$CPUUtilization = $Script:WLBInfo.HostCpuThresholdCritical
 	$CPUUtilization = $CPUUtilization * 100
-	[int]$FreeMemory     = (($Script:WLBInfo.HostMemoryThresholdCritical / 1024) / 1024)
-	[int]$NetworkRead    = (($Script:WLBInfo.HostPifReadThresholdCritical / 1024) / 1024)
-	[int]$NetworkWrite   = (($Script:WLBInfo.HostPifWriteThresholdCritical / 1024) / 1024)
-	[int]$DiskRead       = (($Script:WLBInfo.HostPbdReadThresholdCritical / 1024) / 1024)
-	[int]$DiskWrite      = (($Script:WLBInfo.HostPbdWriteThresholdCritical / 1024) / 1024)
+	[int]$FreeMemory = (($Script:WLBInfo.HostMemoryThresholdCritical / 1024) / 1024)
+	[int]$NetworkRead = (($Script:WLBInfo.HostPifReadThresholdCritical / 1024) / 1024)
+	[int]$NetworkWrite = (($Script:WLBInfo.HostPifWriteThresholdCritical / 1024) / 1024)
+	[int]$DiskRead = (($Script:WLBInfo.HostPbdReadThresholdCritical / 1024) / 1024)
+	[int]$DiskWrite = (($Script:WLBInfo.HostPbdWriteThresholdCritical / 1024) / 1024)
 
 	If ($MSWord -or $PDF)
 	{
@@ -8375,18 +8395,18 @@ Function OutputPoolWLBSettingsMetricWeighting
 	#$Script:WLBInfo.VmDiskWriteWeightHigh     : 0.4
 	
 	[double]$VmCpuUtilizationWeightHigh = $Script:WLBInfo.VmCpuUtilizationWeightHigh
-	[double]$VmMemoryWeightHigh         = $Script:WLBInfo.VmMemoryWeightHigh        
-	[double]$VmNetworkReadWeightHigh    = $Script:WLBInfo.VmNetworkReadWeightHigh   
-	[double]$VmNetworkWriteWeightHigh   = $Script:WLBInfo.VmNetworkWriteWeightHigh  
-	[double]$VmDiskReadWeightHigh       = $Script:WLBInfo.VmDiskReadWeightHigh      
-	[double]$VmDiskWriteWeightHigh      = $Script:WLBInfo.VmDiskWriteWeightHigh
+	[double]$VmMemoryWeightHigh = $Script:WLBInfo.VmMemoryWeightHigh        
+	[double]$VmNetworkReadWeightHigh = $Script:WLBInfo.VmNetworkReadWeightHigh   
+	[double]$VmNetworkWriteWeightHigh = $Script:WLBInfo.VmNetworkWriteWeightHigh  
+	[double]$VmDiskReadWeightHigh = $Script:WLBInfo.VmDiskReadWeightHigh      
+	[double]$VmDiskWriteWeightHigh = $Script:WLBInfo.VmDiskWriteWeightHigh
 
 	$VmCpuUtilizationWeightHigh = $VmCpuUtilizationWeightHigh * 100
-        $VmMemoryWeightHigh         = $VmMemoryWeightHigh * 100        
-        $VmNetworkReadWeightHigh    = $VmNetworkReadWeightHigh * 100   
-        $VmNetworkWriteWeightHigh   = $VmNetworkWriteWeightHigh * 100  
-	$VmDiskReadWeightHigh       = $VmDiskReadWeightHigh * 100      
-	$VmDiskWriteWeightHigh      = $VmDiskWriteWeightHigh * 100	
+	$VmMemoryWeightHigh = $VmMemoryWeightHigh * 100        
+	$VmNetworkReadWeightHigh = $VmNetworkReadWeightHigh * 100   
+	$VmNetworkWriteWeightHigh = $VmNetworkWriteWeightHigh * 100  
+	$VmDiskReadWeightHigh = $VmDiskReadWeightHigh * 100      
+	$VmDiskWriteWeightHigh = $VmDiskWriteWeightHigh * 100	
 	
 	If ($MSWord -or $PDF)
 	{
@@ -8867,7 +8887,7 @@ Function OutputHostGeneralOverview
 		$AgentUptime.Minutes)
 
 	#If ([String]::IsNullOrEmpty($($XSHost.Other_Config["folder"])))
-	If($XSHost.Other_Config.Keys -contains "folder") #added by Webster
+	If ($XSHost.Other_Config.Keys -contains "folder") #added by Webster
 	{
 		$folderName = $XSHost.Other_Config["folder"]
 	}
@@ -9645,7 +9665,7 @@ Function OutputHostCustomFields
 		WriteHTMLLine 3 0 "Custom Fields"
 	}
 	
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		$HostName = $XSHost.Name_Label
 
@@ -10096,14 +10116,14 @@ Function OutputHostLogDestination
 	If ($XSHost.Logging.Count -eq 0)
 	{
 		$LogLocation = "Local"
-		$StoreLogs   = "Not selected"
-		$LogServer   = ""
+		$StoreLogs = "Not selected"
+		$LogServer = ""
 	}
 	Else
 	{
 		$LogLocation = "Local and Remote ($($XSHost.logging.syslog_destination))"
-		$StoreLogs   = "Selected"
-		$LogServer   = "$($XSHost.logging.syslog_destination)"
+		$StoreLogs = "Selected"
+		$LogServer = "$($XSHost.logging.syslog_destination)"
 	}
 	
 	If ($MSWord -or $PDF)
@@ -10993,7 +11013,7 @@ Function OutputHostStorageCustomFields
 		WriteHTMLLine 5 0 "Storage Custom Fields"
 	}
 
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -11428,7 +11448,7 @@ Function OutputHostNetworkCustomFields
 		WriteHTMLLine 5 0 "Network Custom Fields"
 	}
 
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -12077,7 +12097,7 @@ Function OutputSharedStorageCustomFields
 		WriteHTMLLine 3 0 "Custom Fields"
 	}
 
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -12276,7 +12296,7 @@ Function ProcessVMs
 		{
 			$VMOSName = "Unknown"
 		}
-		else 
+		Else
 		{
 			$VMOSName = $VMMetrics.os_version.name
 		}
@@ -12296,7 +12316,7 @@ Function ProcessVMs
 			}
 			
 		}
-		else 
+		Else
 		{
 			$VMHost = $VMHostData.name_label
 		}
@@ -12348,21 +12368,9 @@ Function OutputVMGeneralOverview
 		}
 	}
 
-	[array]$xtags = @()
-	ForEach ($tag in $VM.tags)
-	{
-		$xtags += $tag
-	}
-	If ($xtags.count -gt 0)
-	{
-		[array]$xtags = $xtags | Sort-Object
-	}
-	Else
-	{
-		[array]$xtags = @("<None>")
-	}
+	$xtags = Get-XSTags $VM
 
-	If($VM.other_config.Keys -contains "folder") #added by Webster
+	If ($VM.other_config.Keys -contains "folder") #added by Webster
 	{
 		$folderName = $VM.Other_Config["folder"]
 	}
@@ -12373,10 +12381,9 @@ Function OutputVMGeneralOverview
 
 	#Calculate Time since startup
 	#Thanks to the XS team for the help
-	$VMStartTime = (Get-XenVM -uuid $VM.uuid | `
-		Select-Object -ExpandProperty metrics | `
-		Get-XenVMMetrics | `
-		Select-Object start_time).start_time.ToUniversalTime()
+
+	$VMMetrics = $VM | Select-Object -ExpandProperty metrics | Get-XenVMMetrics
+	$VMStartTime = ( $VMMetrics | Select-Object start_time).start_time.ToUniversalTime()
 
 	$CurrentTime = (Get-Date).ToUniversalTime()
 	$TimeSinceStartup = $CurrentTime - $VMStartTime
@@ -12388,14 +12395,13 @@ Function OutputVMGeneralOverview
 	#Calculate BIOS strings copied
 	#Thanks to the XS team for the help
 	#If VM.bios_strings is empty or if bios-vendor and system-manufacturer are both Xen, it's No
-	If(($null -eq $VM.bios_strings) -or `
+	If (($null -eq $VM.bios_strings) -or `
 		($($VM.bios_strings["bios-vendor"]) -eq "xen") -and `
-		($($VM.bios_strings["system-manufacturer"]) -eq "xen")
-	   )
+		($($VM.bios_strings["system-manufacturer"]) -eq "xen") )
 	{
 		$BIOSStringsCopied = "No"
 	}
-	Else
+ Else
 	{
 		$BIOSStringsCopied = "Yes"
 	}
@@ -12458,17 +12464,22 @@ Function OutputVMGeneralOverview
 			select PV_drivers_up_to_date 
 		is self explanatory	
 	#>
-	
+	$IsMgmtAgentInstalled = ""
+	$IsIOInstalledString = ""
+	$CanReceiveUpdatesFromWindows = ""
+	$LinuxVirtState = ""
+
 	#calculate the three virtualization state options
-	If($VMOSName -like "*windows*")
+	If ($VMOSName -like "Unknown")
+	{
+		#Skip
+	}
+	ElseIf ($VMOSName -like "*windows*")
 	{
 		#Is IO installed
-		$IsIOInstalled = (Get-XenVM -uuid $VM.uuid | `
-			Select-Object -ExpandProperty guest_metrics | `
-			Get-XenVMGuestMetrics | `
-			Select-Object PV_drivers_detected).PV_drivers_detected
+		$IsIOInstalled = ($VMMetrics | Select-Object PV_drivers_detected).PV_drivers_detected
 		
-		If($IsIOInstalled)
+		If ($IsIOInstalled)
 		{
 			$IsIOInstalledString = "I/O optimized"
 		}
@@ -12478,22 +12489,24 @@ Function OutputVMGeneralOverview
 		}
 		
 		#Is the management agent installed
-		$other = Get-XenVM -uuid $VM.uuid | `
-			Select-Object -ExpandProperty guest_metrics | `
-			Get-XenVMGuestMetrics | `
-			Select-Object -ExpandProperty other
-			
-		If($Other["feature-static-ip-setting"] -eq 0)
+		$IsMgmtAgentInstalled = "Management Agent not installed"
+		if ($null -ne $VMMetrics -and ($VMMetrics | Get-Member -Name other -ErrorAction SilentlyContinue))
 		{
-			$IsMgmtAgentInstalled = "Management Agent not installed"
+			$other = $VMMetrics | Select-Object -ExpandProperty other
+			if ($null -ne $other)
+			{
+				If ($Other["feature-static-ip-setting"] -eq 0)
+				{
+					$IsMgmtAgentInstalled = "Management Agent not installed"
+				}
+				Else
+				{
+					$IsMgmtAgentInstalled = "Management Agent installed"
+				}
+			}
 		}
-		Else
-		{
-			$IsMgmtAgentInstalled = "Management Agent installed"
-		}
-		
 		#Can VM receive updates from windows updates
-		If($VM.has_vendor_device)
+		If ($VM.has_vendor_device)
 		{
 			$CanReceiveUpdatesFromWindows = "Able to receive updates from Windows Update"
 		}
@@ -12504,43 +12517,36 @@ Function OutputVMGeneralOverview
 	}
 	Else
 	{
-		$PVVersion = (Get-XenVM -uuid $VM.uuid | `
-			Select-Object -ExpandProperty guest_metrics | `
-			Get-XenVMGuestMetrics | `
-			Select-Object PV_drivers_version).PV_drivers_version
-		
-		If($PVVersion.Count -eq 0 -or ($PVVersion.bios_strings.keys -contains "bios-vendor" -eq $False))
+		$PVVersion = ($VMMetrics | Select-Object PV_drivers_version).PV_drivers_version
+		if ($null -ne $PVVersion)
 		{
-			$LinuxVirtState = "Citrix VM Tools not installed"
-		}
-		ElseIf($PVVersion.bios_strings.keys -contains "bios-vendor")
-		{
-			$Major = $PVVersion.Major
-			$Minor = $PVVersion.Minor
-			
-			If($Major -eq 0 -and $Minor -eq 0)
+			If ($PVVersion.Count -eq 0 -or ($PVVersion.bios_strings.keys -contains "bios-vendor"))
 			{
 				$LinuxVirtState = "Citrix VM Tools not installed"
 			}
-			Else
+			ElseIf ($PVVersion.bios_strings.keys -contains "bios-vendor")
 			{
-				$PVUpToDate = (Get-XenVM -uuid $VM.uuid | `
-					Select-Object -ExpandProperty guest_metrics | `
-					Get-XenVMGuestMetrics | `
-					Select-Object PV_drivers_up_to_date).PV_drivers_up_to_date
-				
-				If($PVUpToDate)
+				$Major = $PVVersion["major"]
+				$Minor = $PVVersion["major"]
+			
+				If ($Major -eq 0 -and $Minor -eq 0)
 				{
-					$LinuxVirtState = "Optimized `(version $Major.$Minor installed`)"
+					$LinuxVirtState = "Citrix VM Tools not installed"
 				}
 				Else
 				{
-					$LinuxVirtState = "Tools out of date `(version $Major.$Minor installed`)"
+					$PVUpToDate = ($VMMetrics | Select-Object PV_drivers_up_to_date).PV_drivers_up_to_date
+				
+					If ($PVUpToDate)
+					{
+						$LinuxVirtState = "Optimized `(version $Major.$Minor installed`)"
+					}
+					Else
+					{
+						$LinuxVirtState = "Tools out of date `(version $Major.$Minor installed`)"
+					}
 				}
 			}
-		}
-		Else
-		{
 		}
 	}
 	
@@ -12561,13 +12567,13 @@ Function OutputVMGeneralOverview
 	
 	Switch ($VM.domain_type)
 	{
-		"hvm"		{$Virtualizationmode = "Hardware-assisted Virtualization (HVM)"; Break}
-		"pv"		{$Virtualizationmode = "PV: Paravirtualized"; Break}
-		"pv_in_pvh"	{$Virtualizationmode = "PV inside a PVH container"; Break}
-		"pvh"		{$Virtualizationmode = "PVH"; Break}
-		"unspecified"	{$Virtualizationmode = "Unspecified"; Break}
-		"unknown"	{$Virtualizationmode = "Unknown"; Break}
-		Default		{$Virtualizationmode = "Unable to determine the Virtuaization mode: $($VM.domain_type)"; Break}
+		"hvm" { $Virtualizationmode = "Hardware-assisted Virtualization (HVM)"; Break }
+		"pv" { $Virtualizationmode = "PV: Paravirtualized"; Break }
+		"pv_in_pvh"	{ $Virtualizationmode = "PV inside a PVH container"; Break }
+		"pvh" { $Virtualizationmode = "PVH"; Break }
+		"unspecified"	{ $Virtualizationmode = "Unspecified"; Break }
+		"unknown"	{ $Virtualizationmode = "Unknown"; Break }
+		Default { $Virtualizationmode = "Unable to determine the Virtuaization mode: $($VM.domain_type)"; Break }
 	}
 	
 	
@@ -12589,7 +12595,11 @@ Function OutputVMGeneralOverview
 		$ScriptInformation += @{ Data = "Operating System"; Value = $VMOSName; }
 		$ScriptInformation += @{ Data = "Virtualization mode"; Value = $Virtualizationmode; }
 		$ScriptInformation += @{ Data = "BIOS strings copied"; Value = $BIOSStringsCopied; }
-		If($VMOSName -like "*windows*")
+		If ($VMOSName -like "Unknown")
+		{
+			#Do nothing
+		}
+		ElseIf ($VMOSName -like "*windows*")
 		{
 			$ScriptInformation += @{ Data = "Virtualization state"; Value = $IsIOInstalledString; }
 			$ScriptInformation += @{ Data = ""; Value = $IsMgmtAgentInstalled; }
@@ -12630,7 +12640,11 @@ Function OutputVMGeneralOverview
 		Line 3 "Operating System    : " $VMOSName
 		Line 3 "Virtualization mode : " $Virtualizationmode
 		Line 3 "BIOS strings copied : " $BIOSStringsCopied
-		If($VMOSName -like "*windows*")
+		If ($VMOSName -like "Unknown")
+		{
+			#Do nothing
+		}
+		ElseIf ($VMOSName -like "*windows*")
 		{
 			Line 3 "Virtualization state: " $IsIOInstalledString
 			Line 3 "                      " $IsMgmtAgentInstalled
@@ -12659,7 +12673,11 @@ Function OutputVMGeneralOverview
 		$rowdata += @(, ('Operating System', ($htmlsilver -bor $htmlbold), $VMOSName, $htmlwhite))
 		$rowdata += @(, ("Virtualization mode", ($htmlsilver -bor $htmlbold), $Virtualizationmode, $htmlwhite))
 		$rowdata += @(, ("BIOS strings copied", ($htmlsilver -bor $htmlbold), $BIOSStringsCopied, $htmlwhite))
-		If($VMOSName -like "*windows*")
+		If ($VMOSName -like "Unknown")
+		{
+			#Do nothing
+		}
+		ElseIf ($VMOSName -like "*windows*")
 		{
 			$rowdata += @(, ("Virtualization state", ($htmlsilver -bor $htmlbold), $IsIOInstalledString, $htmlwhite))
 			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), $IsMgmtAgentInstalled, $htmlwhite))
@@ -12703,7 +12721,7 @@ Function OutputVMGeneralBootOptions
 		$bootorder[$c - 1] = "[$c] $($bootorder[$c-1])"
 	}
 
-	If($VM.HVM_boot_params.Keys -contains "firmware") #added by Webster
+	If ($VM.HVM_boot_params.Keys -contains "firmware") #added by Webster
 	{
 		$BootMode = "$($VM.HVM_boot_params['firmware'].ToUpper()) Boot"
 	}
@@ -12793,7 +12811,7 @@ Function OutputVMGeneralCPU
 
 	try
 	{
-		If($VM.platform.keys -contains "cores-per-socket") #added by Webster
+		If ($VM.platform.keys -contains "cores-per-socket") #added by Webster
 		{
 			$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
 		}
@@ -13027,7 +13045,7 @@ Function OutputVMGeneral
 		[array]$xtags = @("<None>")
 	}
 
-	If($VM.other_config.Keys -contains "folder") #added by Webster
+	If ($VM.other_config.Keys -contains "folder") #added by Webster
 	{
 		$folderName = $VM.Other_Config["folder"]
 	}
@@ -13246,7 +13264,7 @@ Function OutputVMCPU
 
 	try
 	{
-		If($VM.platform.keys -contains "cores-per-socket") #added by Webster
+		If ($VM.platform.keys -contains "cores-per-socket") #added by Webster
 		{
 			$sockets = $([int]$VM.VCPUs_max / [int]$vm.platform["cores-per-socket"])
 		}
@@ -14376,7 +14394,7 @@ Function OutputVMStorageCustomFields
 		WriteHTMLLine 5 0 "Storage Custom Fields"
 	}
 
-	If($Null -eq $CustomFields)
+	If ($Null -eq $CustomFields)
 	{
 		If ($MSWord -or $PDF)
 		{
@@ -14704,7 +14722,7 @@ Function OutputVMSnapshots
 		}
 		else
 		{
-			$parentVM = $xenVMs | Where-Object { $_.opaque_ref -eq $item.parent.opaque_ref } | Select-Object -ExpandProperty  name_label
+			$parentVM = $xenVMs | Where-Object { $_.opaque_ref -eq $item.parent.opaque_ref } | Select-Object -ExpandProperty name_label
 			if ($null -ne $parentVM)
 			{
 				$parent = $parentVM
