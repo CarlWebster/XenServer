@@ -59,7 +59,7 @@ PARAMETERS
 
         You can enter the ServerName as the NetBIOS name, FQDN, or IP Address.
 
-        If entered as an IP address, the script attempts o determine and use the actual
+        If entered as an IP address, the script attempts to determine and use the actual
         pool or Pool Master name.
 
         ServerName should be the Pool Master. If you use a Slave host, the script attempts
@@ -510,9 +510,9 @@ NOTES
 
 
         NAME: XS_Inventory.ps1
-        VERSION: 0.026
+        VERSION: 0.027
         AUTHOR: Carl Webster and John Billekens, along with help from Michael B. Smith, Guy Leech, and the XenServer team
-        LASTEDIT: August 22, 2023
+        LASTEDIT: August 31, 2023
 
     -------------------------- EXAMPLE 1 --------------------------
 
