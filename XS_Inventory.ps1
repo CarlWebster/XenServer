@@ -36,7 +36,7 @@
 	
 	You can enter the ServerName as the NetBIOS name, FQDN, or IP Address.
 	
-	If entered as an IP address, the script attempts o determine and use the actual 
+	If entered as an IP address, the script attempts to determine and use the actual 
 	pool or Pool Master name.
 	
 	ServerName should be the Pool Master. If you use a Slave host, the script attempts 
@@ -465,8 +465,8 @@
 .NOTES
 	NAME: XS_Inventory.ps1
 	VERSION: 0.027
-	AUTHOR: Carl Webster and John Billekens along with help from Michael B. Smith, Guy Leech, and the XenServer team
-	LASTEDIT: August 30, 2023
+	AUTHOR: Carl Webster and John Billekens, along with help from Michael B. Smith, Guy Leech, and the XenServer team
+	LASTEDIT: August 31, 2023
 #>
 
 #endregion
@@ -590,10 +590,12 @@ Param(
 #http://www.CarlWebster.com
 #Created on June 27, 2023
 #
-#.026
+#.027
+#	Cleaned up HTML and Text output (Webster)
+#	In Function ProcessSharedStorage, added "There is no Shared Storage configured" (Webster)
 #	In Function OutputVMGeneralOverview, fixed some issues for when some options are not available (JohnB)
-#   Added "(Unlicensed)" to pool name if no License is assigned or available (same as XC) (JohnB)
-#   ReadMe updated (JohnB)
+#	Added "(Unlicensed)" to pool name if no License is assigned or available (same as XC) (JohnB)
+#	ReadMe updated (JohnB and Webster)
 #
 #.026
 #	In Function OutputVMGeneralOverview, add the following for both Windows and Linux VMs: (Webster)
@@ -981,7 +983,7 @@ $Error.Clear()
 $Script:emailCredentials = $Null
 $script:MyVersion = '0.027'
 $Script:ScriptName = "XS_Inventory.ps1"
-$tmpdate = [datetime] "08/30/2023"
+$tmpdate = [datetime] "08/31/2023"
 $Script:ReleaseDate = $tmpdate.ToUniversalTime().ToShortDateString()
 
 If ($MSWord -eq $False -and $PDF -eq $False -and $Text -eq $False -and $HTML -eq $False)
@@ -5429,13 +5431,13 @@ Function OutputPoolGeneralOverview
 	If ($Text)
 	{
 		Line 1 "General (Overview)"
-		Line 2 "Pool name`t`t: " $poolName
-		Line 2 "Description`t`t: " $Script:XSPool.name_description
-		Line 2 "Tags`t`t`t: " $($xtags -join ", ")
-		Line 2 "Folder`t`t`t: " $folderName
-		Line 2 "Pool License`t`t: " $PoolLicense
-		Line 2 "Number of Sockets`t: " $NumSockets
-		Line 2 "XenServer Version`t: " $Script:PoolMasterInfo.software_version.product_version_text_short
+		Line 2 "Pool name        : " $poolName
+		Line 2 "Description      : " $Script:XSPool.name_description
+		Line 2 "Tags             : " $($xtags -join ", ")
+		Line 2 "Folder           : " $folderName
+		Line 2 "Pool License     : " $PoolLicense
+		Line 2 "Number of Sockets: " $NumSockets
+		Line 2 "XenServer Version: " $Script:PoolMasterInfo.software_version.product_version_text_short
 		Line 0 ""
 	}
 	If ($HTML)
@@ -6162,8 +6164,8 @@ Function OutputPoolPowerOn
 			}
 			If ($Text)
 			{
-				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
-				Line 2 "Power On mode`t: " "Disabled"
+				Line 2 "Server       : " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode: " "Disabled"
 				Line 0 ""
 			}
 			If ($HTML)
@@ -6211,8 +6213,8 @@ Function OutputPoolPowerOn
 			}
 			If ($Text)
 			{
-				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
-				Line 2 "Power On mode`t: " "Dell Remote Access Controller (DRAC)"
+				Line 2 "Server       : " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode: " "Dell Remote Access Controller (DRAC)"
 				Line 2 "Configuration options"
 
 				[int]$cnt2 = -1
@@ -6273,8 +6275,8 @@ Function OutputPoolPowerOn
 			}
 			If ($Text)
 			{
-				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
-				Line 2 "Power On mode`t: " "Wake-on-LAN (WoL)"
+				Line 2 "Server       : " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode: " "Wake-on-LAN (WoL)"
 				Line 0 ""
 			}
 			If ($HTML)
@@ -6314,8 +6316,8 @@ Function OutputPoolPowerOn
 			}
 			If ($Text)
 			{
-				Line 2 "Server`t`t: " "$($XSHost.Name_Label)"
-				Line 2 "Power On mode`t: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
+				Line 2 "Server       : " "$($XSHost.Name_Label)"
+				Line 2 "Power On mode: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
 				Line 2 "Configuration options"
 
 				[int]$cnt2 = -1
@@ -6657,11 +6659,11 @@ Function OutputPoolMemory
 			If ($Text)
 			{
 				Line 2 "Host: " "$($XSHostMemory.XSHostName)"
-				Line 3 "Total Memory`t`t: " "$($XSHostMemory.TotalMemory)"
-				Line 3 "Currently used`t`t: " "$($XSHostMemory.CurrentlyUsed)"
-				Line 3 "Control domain memory`t: " "$($XSHostMemory.ControlDomainMemory)"
-				Line 3 "Available memory`t: " "$($XSHostMemory.AvailableMemory)"
-				Line 3 "Total max memory`t: " "$($XSHostMemory.TotalMaxMemory)"
+				Line 3 "Total Memory         : " "$($XSHostMemory.TotalMemory)"
+				Line 3 "Currently used       : " "$($XSHostMemory.CurrentlyUsed)"
+				Line 3 "Control domain memory: " "$($XSHostMemory.ControlDomainMemory)"
+				Line 3 "Available memory     : " "$($XSHostMemory.AvailableMemory)"
+				Line 3 "Total max memory     : " "$($XSHostMemory.TotalMaxMemory)"
 			}
 			If ($HTML)
 			{
@@ -6811,14 +6813,14 @@ Function OutputPoolStorage
 				If ($Text)
 				{
 					Line 2 "Name: " $($item.Name)
-					Line 3 "Host               : " $($item.XSHostName)
-					Line 3 "Description        : " $($item.Description)
-					Line 3 "Default SR         : " $($item.DefaultSR)
-					Line 3 "Type               : " $($item.Type)
-					Line 3 "Shared             : " $($item.Shared)
-					Line 3 "Usage              : " $($item.Usage)
-					Line 3 "Size               : " $($item.Size)
-					Line 3 "Virtual allocation : " $($item.VirtualAllocation)
+					Line 3 "Host              : " $($item.XSHostName)
+					Line 3 "Description       : " $($item.Description)
+					Line 3 "Default SR        : " $($item.DefaultSR)
+					Line 3 "Type              : " $($item.Type)
+					Line 3 "Shared            : " $($item.Shared)
+					Line 3 "Usage             : " $($item.Usage)
+					Line 3 "Size              : " $($item.Size)
+					Line 3 "Virtual allocation: " $($item.VirtualAllocation)
 				}
 				If ($HTML)
 				{
@@ -7358,14 +7360,14 @@ Function OutputPoolNetworking
 				If ($Text)
 				{
 					Line 3 "Name: " $($item.Name)
-					Line 4 "Description`t: " $($item.Description)
-					Line 4 "NIC`t`t: " $($item.NIC)
-					Line 4 "VLAN`t`t: " $($item.VLAN)
-					Line 4 "Auto`t`t: " $($item.Auto)
-					Line 4 "Link Status`t: " $($item.LinkStatus)
-					Line 4 "MAC`t`t: " $($item.MAC)
-					Line 4 "MTU`t`t: " $($item.MTU)
-					Line 4 "SR-IOV`t`t: " $($item.SRIOV)
+					Line 4 "Description: " $($item.Description)
+					Line 4 "NIC        : " $($item.NIC)
+					Line 4 "VLAN       : " $($item.VLAN)
+					Line 4 "Auto       : " $($item.Auto)
+					Line 4 "Link Status: " $($item.LinkStatus)
+					Line 4 "MAC        : " $($item.MAC)
+					Line 4 "MTU        : " $($item.MTU)
+					Line 4 "SR-IOV     : " $($item.SRIOV)
 					Line 0 ""
 				}
 				If ($HTML)
@@ -7384,7 +7386,7 @@ Function OutputPoolNetworking
 					$rowdata += @(, ("     NIC", ($htmlsilver -bor $htmlbold), $($item.NIC), $htmlwhite))
 					$rowdata += @(, ("     VLAN", ($htmlsilver -bor $htmlbold), $($item.VLAN), $htmlwhite))
 					$rowdata += @(, ("     Auto", ($htmlsilver -bor $htmlbold), $($item.Auto), $htmlwhite))
-					$rowdata += @(, ("     Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus), $htmlwhite))
+					$rowdata += @(, ("     Link Status", ($htmlsilver -bor $htmlbold), $($item.LinkStatus.Trim("<",">")), $htmlwhite))
 					$rowdata += @(, ("     MAC", ($htmlsilver -bor $htmlbold), $($item.MAC), $htmlwhite))
 					$rowdata += @(, ("     MTU", ($htmlsilver -bor $htmlbold), $($item.MTU), $htmlwhite))
 					$rowdata += @(, ("     SRIOV", ($htmlsilver -bor $htmlbold), $($item.SRIOV), $htmlwhite))
@@ -8960,17 +8962,17 @@ Function OutputHostGeneralOverview
 	{
 		Line 1 "Name: " "$($XSHost.name_label)"
 		Line 2 "General (Overview)"
-		Line 3 "Description`t`t: " $XSHostDescription
-		Line 3 "Tags`t`t`t: " "$($xtags -join ", ")"
-		Line 3 "Folder`t`t`t: " $folderName
-		Line 3 "Pool master`t`t: " $IAmThePoolMaster
-		Line 3 "Enabled`t`t`t: " $XSHostenabled
-		Line 3 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
-		Line 3 "Log destination`t`t: " $LogLocation
-		Line 3 "Server uptime`t`t: " $ServerUptimeString
-		Line 3 "Toolstack uptime`t: " $AgentUptimeString
-		Line 3 "Domain`t`t`t: " $XSHost.external_auth_service_name
-		Line 3 "UUID`t`t`t: " $XSHost.uuid
+		Line 3 "Description     : " $XSHostDescription
+		Line 3 "Tags            : " "$($xtags -join ", ")"
+		Line 3 "Folder          : " $folderName
+		Line 3 "Pool master     : " $IAmThePoolMaster
+		Line 3 "Enabled         : " $XSHostenabled
+		Line 3 "iSCSI IQN       : " $XSHost.iscsi_iqn
+		Line 3 "Log destination : " $LogLocation
+		Line 3 "Server uptime   : " $ServerUptimeString
+		Line 3 "Toolstack uptime: " $AgentUptimeString
+		Line 3 "Domain          : " $XSHost.external_auth_service_name
+		Line 3 "UUID            : " $XSHost.uuid
 		Line 0 ""
 	}
 	If ($HTML)
@@ -9052,12 +9054,12 @@ Function OutputHostLicense
 	}
 	If ($Text)
 	{
-		Line 3 "Status`t`t`t: " "$licenseStatus"
-		Line 3 "Expiry date`t`t: " (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate)
-		Line 3 "License`t`t`t: " "$($XSHost.license_params["sku_marketing_name"])"
-		Line 3 "Number of Sockets`t: " $($XSHost.license_params["sockets"])
-		Line 3 "License Server Address`t: " "$($XSHost.license_server["address"])"
-		Line 3 "License Server Port`t: " "$($XSHost.license_server["port"])"
+		Line 3 "Status                : " "$licenseStatus"
+		Line 3 "Expiry date           : " (Get-Date -UFormat "%B %d, %Y" $licenseExpiryDate)
+		Line 3 "License               : " "$($XSHost.license_params["sku_marketing_name"])"
+		Line 3 "Number of Sockets     : " $($XSHost.license_params["sockets"])
+		Line 3 "License Server Address: " "$($XSHost.license_server["address"])"
+		Line 3 "License Server Port   : " "$($XSHost.license_server["port"])"
 	}
 	If ($HTML)
 	{
@@ -9141,9 +9143,9 @@ Function OutputHostVersion
 	}
 	If ($Text)
 	{
-		Line 3 "Build date`t: " "$($XSHost.software_version["date"])"
-		Line 3 "Version`t`t: " "$($XSHost.software_version["product_version_text"])"
-		Line 3 "DBV`t`t: " "$($XSHost.software_version["dbv"])"
+		Line 3 "Build date: " "$($XSHost.software_version["date"])"
+		Line 3 "Version   : " "$($XSHost.software_version["product_version_text"])"
+		Line 3 "DBV       : " "$($XSHost.software_version["dbv"])"
 	}
 	If ($HTML)
 	{
@@ -9322,8 +9324,8 @@ Function OutputHostManagement
 	}
 	If ($Text)
 	{
-		Line 3 "DNS hostname`t`t: " "$($XSHost.hostname)"
-		Line 3 "Management interface`t: " "$($managementIPs -join ", ")"
+		Line 3 "DNS hostname        : " "$($XSHost.hostname)"
+		Line 3 "Management interface: " "$($managementIPs -join ", ")"
 	}
 	If ($HTML)
 	{
@@ -9504,10 +9506,10 @@ Function OutputHostCPUs
 	}
 	If ($Text)
 	{
-		Line 3 "CPU`t: " "$($hostCPUCount)"
-		Line 3 "Vendor`t: " "$($hostVendor)"
-		Line 3 "Model`t: " "$($hostModel)"
-		Line 3 "Speed`t: " "$($hostSpeed)"
+		Line 3 "CPU   : " "$($hostCPUCount)"
+		Line 3 "Vendor: " "$($hostVendor)"
+		Line 3 "Model : " "$($hostModel)"
+		Line 3 "Speed : " "$($hostSpeed)"
 	}
 	If ($HTML)
 	{
@@ -9619,10 +9621,10 @@ Function OutputHostGeneral
 	If ($Text)
 	{
 		Line 2 "General (Properties)"
-		Line 3 "Description`t`t: " $XSHostDescription
-		Line 3 "Folder`t`t`t: " $folderName
-		Line 3 "Tags`t`t`t: " "$($xtags -join ", ")"
-		Line 3 "iSCSI IQN`t`t: " $XSHost.iscsi_iqn
+		Line 3 "Description: " $XSHostDescription
+		Line 3 "Folder     : " $folderName
+		Line 3 "Tags       : " "$($xtags -join ", ")"
+		Line 3 "iSCSI IQN  : " $XSHost.iscsi_iqn
 		Line 0 ""
 	}
 	If ($HTML)
@@ -10166,9 +10168,9 @@ Function OutputHostLogDestination
 	}
 	If ($Text)
 	{
-		Line 3 "Log destination`t`t`t`t`t: " $LogLocation
-		Line 3 "Also store the system logs on a remote server`t: " $StoreLogs
-		Line 3 "Server`t`t`t`t`t`t: " $LogServer
+		Line 3 "Log destination                              : " $LogLocation
+		Line 3 "Also store the system logs on a remote server: " $StoreLogs
+		Line 3 "Server                                       : " $LogServer
 		Line 0 ""
 	}
 	If ($HTML)
@@ -10224,8 +10226,8 @@ Function OutputHostPowerOn
 		}
 		If ($Text)
 		{
-			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
-			Line 3 "Power On mode`t: " "Disabled"
+			Line 3 "Server       : " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode: " "Disabled"
 		}
 		If ($HTML)
 		{
@@ -10270,8 +10272,8 @@ Function OutputHostPowerOn
 		}
 		If ($Text)
 		{
-			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
-			Line 3 "Power On mode`t: " "Dell Remote Access Controller (DRAC)"
+			Line 3 "Server       : " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode: " "Dell Remote Access Controller (DRAC)"
 			Line 3 "Configuration options"
 
 			[int]$cnt2 = -1
@@ -10330,8 +10332,8 @@ Function OutputHostPowerOn
 		}
 		If ($Text)
 		{
-			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
-			Line 3 "Power On mode`t: " "Wake-on-LAN (WoL)"
+			Line 3 "Server       : " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode: " "Wake-on-LAN (WoL)"
 		}
 		If ($HTML)
 		{
@@ -10369,8 +10371,8 @@ Function OutputHostPowerOn
 		}
 		If ($Text)
 		{
-			Line 3 "Server`t`t: " "$($XSHost.Name_Label)"
-			Line 3 "Power On mode`t: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
+			Line 3 "Server       : " "$($XSHost.Name_Label)"
+			Line 3 "Power On mode: " "Custom power-on script /etc/xapi.d/plugins/$($XSHost.power_on_mode)"
 			Line 3 "Configuration options"
 
 			[int]$cnt2 = -1
@@ -10592,11 +10594,11 @@ Function OutputHostMemory
 	}
 	If ($Text)
 	{
-		Line 3 "Total Memory`t`t: " "$($XSHostMemory.TotalMemory)"
-		Line 3 "Currently used`t`t: " "$($XSHostMemory.CurrentlyUsed)"
-		Line 3 "Control domain memory`t: " "$($XSHostMemory.ControlDomainMemory)"
-		Line 3 "Available memory`t: " "$($XSHostMemory.AvailableMemory)"
-		Line 3 "Total max memory`t: " "$($XSHostMemory.TotalMaxMemory)"
+		Line 3 "Total Memory         : " "$($XSHostMemory.TotalMemory)"
+		Line 3 "Currently used       : " "$($XSHostMemory.CurrentlyUsed)"
+		Line 3 "Control domain memory: " "$($XSHostMemory.ControlDomainMemory)"
+		Line 3 "Available memory     : " "$($XSHostMemory.AvailableMemory)"
+		Line 3 "Total max memory     : " "$($XSHostMemory.TotalMaxMemory)"
 	}
 	If ($HTML)
 	{
@@ -10659,18 +10661,21 @@ Function OutputHostMemory
 			$ScriptInformation += @{ Data = "VM Name"; Value = "$($vm.VMName)"; }
 			$ScriptInformation += @{ Data = "Power state"; Value = "$($vm.VMPowerState)"; }
 			$ScriptInformation += @{ Data = "Memory"; Value = "$($vm.VMMemory)"; }
+			$ScriptInformation += @{ Data = ""; Value = ""; }
 		}
 		If ($Text)
 		{
-			Line 3 "VM Name`t`t: " "$($vm.VMName)"
-			Line 3 "Power state`t: " "$($vm.VMPowerState)"
-			Line 3 "Memory`t`t: " "$($vm.VMMemory)"
+			Line 3 "VM Name    : " "$($vm.VMName)"
+			Line 3 "Power state: " "$($vm.VMPowerState)"
+			Line 3 "Memory     : " "$($vm.VMMemory)"
+			Line 3 ""
 		}
 		If ($HTML)
 		{
 			$rowdata += @(, ("VM Name", ($htmlsilver -bor $htmlbold), "$($vm.VMName)", ($htmlsilver -bor $htmlbold)))
 			$rowdata += @(, ("Power state", ($htmlsilver -bor $htmlbold), "$($vm.VMPowerState)", $htmlwhite))
 			$rowdata += @(, ("Memory", ($htmlsilver -bor $htmlbold), "$($vm.VMMemory)", $htmlwhite))
+			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
 		}
 	}
 	foreach ($vm in @($XSHostMemory.VMData | Where-Object { $_.VMPowerState -eq "Off" }))
@@ -10680,18 +10685,21 @@ Function OutputHostMemory
 			$ScriptInformation += @{ Data = "VM Name"; Value = "$($vm.VMName)"; }
 			$ScriptInformation += @{ Data = "Power state"; Value = "$($vm.VMPowerState)"; }
 			$ScriptInformation += @{ Data = "Memory"; Value = "$($vm.VMMemory)"; }
+			$ScriptInformation += @{ Data = ""; Value = ""; }
 		}
 		If ($Text)
 		{
-			Line 3 "VM Name`t`t: " "$($vm.VMName)"
-			Line 3 "Power state`t: " "$($vm.VMPowerState)"
-			Line 3 "Memory`t`t: " "$($vm.VMMemory)"
+			Line 3 "VM Name    : " "$($vm.VMName)"
+			Line 3 "Power state: " "$($vm.VMPowerState)"
+			Line 3 "Memory     : " "$($vm.VMMemory)"
+			Line 3 ""
 		}
 		If ($HTML)
 		{
 			$rowdata += @(, ("VM Name", ($htmlsilver -bor $htmlbold), "$($vm.VMName)", ($htmlsilver -bor $htmlbold)))
 			$rowdata += @(, ("Power state", ($htmlsilver -bor $htmlbold), "$($vm.VMPowerState)", $htmlwhite))
 			$rowdata += @(, ("Memory", ($htmlsilver -bor $htmlbold), "$($vm.VMMemory)", $htmlwhite))
+			$rowdata += @(, ("", ($htmlsilver -bor $htmlbold), "", $htmlwhite))
 		}
 	}
 	If ($MSWord -or $PDF)
@@ -10826,12 +10834,12 @@ Function OutputHostStorage
 			If ($Text)
 			{
 				Line 3 "Name: " $($item.Name)
-				Line 4 "Description`t`t: " $($item.Description)
-				Line 4 "Type`t`t`t: " $($item.Type)
-				Line 4 "Shared`t`t`t: " $($item.Shared)
-				Line 4 "Usage`t`t`t: " $($item.Usage)
-				Line 4 "Size`t`t`t: " $($item.Size)
-				Line 4 "Virtual allocation`t: " $($item.VirtualAllocation)
+				Line 4 "Description       : " $($item.Description)
+				Line 4 "Type              : " $($item.Type)
+				Line 4 "Shared            : " $($item.Shared)
+				Line 4 "Usage             : " $($item.Usage)
+				Line 4 "Size              : " $($item.Size)
+				Line 4 "Virtual allocation: " $($item.VirtualAllocation)
 				Line 0 ""
 			}
 			If ($HTML)
@@ -11281,14 +11289,14 @@ Function OutputHostNetworking
 			If ($Text)
 			{
 				Line 3 "Name: " $($item.Name)
-				Line 4 "Description`t: " $($item.Description)
-				Line 4 "NIC`t`t: " $($item.NIC)
-				Line 4 "VLAN`t`t: " $($item.VLAN)
-				Line 4 "Auto`t`t: " $($item.Auto)
-				Line 4 "Link Status`t: " $($item.LinkStatus)
-				Line 4 "MAC`t`t: " $($item.MAC)
-				Line 4 "MTU`t`t: " $($item.MTU)
-				Line 4 "SR-IOV`t`t: " $($item.SRIOV)
+				Line 4 "Description: " $($item.Description)
+				Line 4 "NIC        : " $($item.NIC)
+				Line 4 "VLAN       : " $($item.VLAN)
+				Line 4 "Auto       : " $($item.Auto)
+				Line 4 "Link Status: " $($item.LinkStatus)
+				Line 4 "MAC        : " $($item.MAC)
+				Line 4 "MTU        : " $($item.MTU)
+				Line 4 "SR-IOV     : " $($item.SRIOV)
 				Line 0 ""
 			}
 			If ($HTML)
@@ -11763,15 +11771,15 @@ Function OutputHostNICs
 			If ($Text)
 			{
 				Line 3 "NIC: " $($Item.Name)
-				Line 4 "MAC`t`t: " $($item.MAC)
-				Line 4 "Link Status`t: " $($item.LinkStatus)
-				Line 4 "Speed`t`t: " $($item.Speed)
-				Line 4 "Duplex`t`t: " $($item.Duplex)
-				Line 4 "Vendor`t`t: " $($item.Vendor)
-				Line 4 "Device`t`t: " $($item.Device)
-				Line 4 "PCI Bus Path`t: " $($item.PCIBusPath)
-				Line 4 "FCoE Capable`t: " $($item.FCoE)
-				Line 4 "SR-IOV Capable`t: " $($item.SRIOV)
+				Line 4 "MAC           : " $($item.MAC)
+				Line 4 "Link Status   : " $($item.LinkStatus)
+				Line 4 "Speed         : " $($item.Speed)
+				Line 4 "Duplex        : " $($item.Duplex)
+				Line 4 "Vendor        : " $($item.Vendor)
+				Line 4 "Device        : " $($item.Device)
+				Line 4 "PCI Bus Path  : " $($item.PCIBusPath)
+				Line 4 "FCoE Capable  : " $($item.FCoE)
+				Line 4 "SR-IOV Capable: " $($item.SRIOV)
 				Line 0 ""
 			}
 			If ($HTML)
@@ -11900,7 +11908,7 @@ Function OutputHostGPU
 			}
 			If ([string]::IsNullOrEmpty($gpuTypesText))
 			{
-				$gpuTypesText = "none"
+				$gpuTypesText = "None"
 			}
 			If ([String]::IsNullOrEmpty($($Item.is_system_display_device)))
 			{
@@ -11923,10 +11931,10 @@ Function OutputHostGPU
 			If ($Text)
 			{
 				Line 3 "" ""
-				Line 3 "Name`t`t`t`t: " $($gpuGroup.name_label)
-				Line 3 "vGPU allocation`t`t`t: " $($allocation)
-				Line 3 "Primary host display adapter`t: " $($primaryAdapter)
-				Line 3 "vGPU profiles`t`t`t: " $($gpuTypesText)
+				Line 3 "Name                        : " $($gpuGroup.name_label)
+				Line 3 "vGPU allocation             : " $($allocation)
+				Line 3 "Primary host display adapter: " $($primaryAdapter)
+				Line 3 "vGPU profiles               : " $($gpuTypesText)
 				Line 0 ""
 			}
 			If ($HTML)
@@ -11975,7 +11983,6 @@ Function OutputHostGPU
 #endregion hosts
 
 #region SharedStorage
-
 Function ProcessSharedStorage
 {
 	Write-Verbose "$(Get-Date -Format G): Process Shared Storages"
@@ -11997,12 +12004,30 @@ Function ProcessSharedStorage
 	
 	$XSSharedStorages = $Script:XSPoolStorages | Where-Object { $_.Shared -eq "Yes" -and $_.PoolMaster -eq $True }
 
-	ForEach ($storage in $XSSharedStorages)
+	If($Null -eq $XSSharedStorages)
 	{
-		Write-Verbose "$(Get-Date -Format G): `tOutput Shared Storage $($storage.Name)"
-		OutputSharedStorageGeneral $storage
-		OutputSharedStorageCustomFields $storage.CustomFields
-		OutputSharedStorageStatus $storage
+		If ($MSWord -or $PDF)
+		{
+			WriteWordLine 0 1 "There is no Shared Storage configured"
+		}
+		If ($Text)
+		{
+			Line 1 "There is no Shared Storage configured"
+		}
+		If ($HTML)
+		{
+			WriteHTMLLine 0 1 "There is no Shared Storage configured"
+		}
+	}
+	Else
+	{
+		ForEach ($storage in $XSSharedStorages)
+		{
+			Write-Verbose "$(Get-Date -Format G): `tOutput Shared Storage $($storage.Name)"
+			OutputSharedStorageGeneral $storage
+			OutputSharedStorageCustomFields $storage.CustomFields
+			OutputSharedStorageStatus $storage
+		}
 	}
 }
 
@@ -13890,9 +13915,9 @@ Function OutputVMGPU
 			}
 			If ($Text)
 			{
-				Line 3 "Vendor name`t`t: " $Item.vendor_name
-				Line 3 "Model name`t`t: " $Item.model_name
-				Line 3 "Framebuffer size`t: " $xenGPUFrameBufferSize
+				Line 3 "Vendor name     : " $Item.vendor_name
+				Line 3 "Model name      : " $Item.model_name
+				Line 3 "Framebuffer size: " $xenGPUFrameBufferSize
 			}
 			If ($HTML)
 			{
@@ -14228,15 +14253,15 @@ Function OutputVMStorage
 			}
 			If ($Text)
 			{
-				Line 3 "Position`t`t`t: " $($item.Position)
-				Line 4 "Name`t`t`t: " $($item.Name)
-				Line 4 "Description`t`t: " $($item.Description)
-				Line 4 "SR`t`t`t: " $($item.SR)
-				Line 4 "Size`t`t`t: " $($item.Size)
-				Line 4 "Read Only`t`t: " $($item.ReadOnly)
-				Line 4 "Priority`t`t: " $($item.Priority)
-				Line 4 "Active`t`t`t: " $($item.Active)
-				Line 4 "Device Path`t`t: " $($item.DevicePath)
+				Line 3 "Position: " $($item.Position)
+				Line 4 "Name       : " $($item.Name)
+				Line 4 "Description: " $($item.Description)
+				Line 4 "SR         : " $($item.SR)
+				Line 4 "Size       : " $($item.Size)
+				Line 4 "Read Only  : " $($item.ReadOnly)
+				Line 4 "Priority   : " $($item.Priority)
+				Line 4 "Active     : " $($item.Active)
+				Line 4 "Device Path: " $($item.DevicePath)
 			}
 			If ($HTML)
 			{
@@ -14339,8 +14364,8 @@ Function OutputVMStorageGeneral
 		$rowdata = @()
 		$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), $($item.Name), $htmlwhite)
 		$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), $($item.Description), $htmlwhite))
-		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder), $htmlwhite))
-		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags), $htmlwhite))
+		$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), $($item.Folder.Trim("<",">")), $htmlwhite))
+		$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), $($item.Tags.Trim("<",">")), $htmlwhite))
 	}
 	
 	If ($MSWord -or $PDF)
@@ -14850,18 +14875,20 @@ Function OutputVMSnapshots
 			}
 			If ($Text)
 			{
-				Line 3 "Name`t`t: " "$($Item.Name)"
-				Line 3 "Description`t: " "$($Item.Description)"
-				Line 3 "Parent`t`t: " "$($Item.Parent)"
-				Line 3 "Children`t`t: " "$($Item.Children)"
-				Line 3 "Type`t`t: " "$($Item.Type)"
-				Line 3 "Snapshot time`t: " "$($Item.SnapshotTime)"
-				Line 3 "Tags`t`t: " "$($Item.Tags)"
-				Line 3 "Folder`t`t: " "$($Item.Folder)"
+				Line 3 "Name         : " "$($Item.Name)"
+				Line 3 "Description  : " "$($Item.Description)"
+				Line 3 "Parent       : " "$($Item.Parent)"
+				Line 3 "Children     : " "$($Item.Children)"
+				Line 3 "Type         : " "$($Item.Type)"
+				Line 3 "Snapshot time: " "$($Item.SnapshotTime)"
+				Line 3 "Tags         : " "$($Item.Tags)"
+				Line 3 "Folder       : " "$($Item.Folder)"
 				Line 0 ""
 			}
 			If ($HTML)
 			{
+				$xtags = $Item.Tags.Trim("<", ">")
+				$folderName = $Item.Folder.Trim("<", ">")
 				$rowdata = @()
 				$columnHeaders = @("Name", ($htmlsilver -bor $htmlbold), "$($Item.Name)", ($htmlsilver -bor $htmlbold))
 				$rowdata += @(, ("Description", ($htmlsilver -bor $htmlbold), "$($Item.Description)", $htmlwhite))
@@ -14869,8 +14896,8 @@ Function OutputVMSnapshots
 				$rowdata += @(, ("Children", ($htmlsilver -bor $htmlbold), "$($Item.Children)", $htmlwhite))
 				$rowdata += @(, ("Type", ($htmlsilver -bor $htmlbold), "$($Item.Type)", $htmlwhite))
 				$rowdata += @(, ("SnapshotTime", ($htmlsilver -bor $htmlbold), "$($Item.SnapshotTime)", $htmlwhite))
-				$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), "$($Item.Tags)", $htmlwhite))
-				$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), "$($Item.Folder)", $htmlwhite))
+				$rowdata += @(, ("Tags", ($htmlsilver -bor $htmlbold), "$($xTags)", $htmlwhite))
+				$rowdata += @(, ("Folder", ($htmlsilver -bor $htmlbold), "$($folderName)", $htmlwhite))
 				$msg = ""
 				$columnWidths = @("100", "250")
 				FormatHTMLTable $msg -rowArray $rowdata -columnArray $columnHeaders -fixedWidth $columnWidths
@@ -14907,7 +14934,7 @@ Function OutputVMSnapshots
 				{
 					Line 3 "Custom Fields for snapshot $($Item.Name)"
 					Line 0 ""
-					Line 3 "Name`t`t: " "Value"
+					Line 3 "Name: " "Value"
 				}
 				If ($HTML)
 				{
