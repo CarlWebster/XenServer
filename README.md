@@ -510,9 +510,9 @@ NOTES
 
 
         NAME: XS_Inventory.ps1
-        VERSION: 0.027
+        VERSION: 1.00
         AUTHOR: Carl Webster and John Billekens, along with help from Michael B. Smith, Guy Leech, and the XenServer team
-        LASTEDIT: August 31, 2023
+        LASTEDIT: September 1, 2023
 
     -------------------------- EXAMPLE 1 --------------------------
 
